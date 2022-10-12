@@ -2,12 +2,14 @@ package openwrt
 
 /*
 #include <uci.h>
+#include <stdlib.h>
 */
 import "C"
 import (
 	"fmt"
 	"os"
 	"path"
+	"unsafe"
 )
 
 const (
@@ -86,15 +88,34 @@ func (ctx *UciContext) uci_add_list(ptr *C.struct_uci_ptr) error {
 	return ctx.uci_ret_to_error(ret, err)
 }
 
-func (ctx *UciContext) uci_add_section(pkg *C.struct_uci_package, typ *C.char) error {
-	var section *C.struct_uci_section
-	ret, err := C.uci_add_section(ctx.ptr, pkg, typ, &section)
-	return ctx.uci_ret_to_error(ret, err)
+func (ctx *UciContext) uci_add_section(pkg *C.struct_uci_package, typ *C.char) (section *C.struct_uci_section, err error) {
+	var ret C.int
+	ret, err = C.uci_add_section(ctx.ptr, pkg, typ, &section)
+	err = ctx.uci_ret_to_error(ret, err)
+	if err != nil {
+		return nil, err
+	}
+
+	return section, nil
 }
 
 func (ctx *UciContext) uci_commit(pkg *C.struct_uci_package, overwrite bool) error {
 	ret, err := C.uci_commit(ctx.ptr, &pkg, C.bool(overwrite))
 	return ctx.uci_ret_to_error(ret, err)
+}
+
+func (ctx *UciContext) uci_load(name string) (pkg *C.struct_uci_package, err error) {
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+
+	var ret C.int
+	ret, err = C.uci_load(ctx.ptr, cname, &pkg)
+	err = ctx.uci_ret_to_error(ret, err)
+	if err != nil {
+		return nil, err
+	}
+
+	return pkg, nil
 }
 
 func (ctx *UciContext) uci_unload(pkg *C.struct_uci_package) error {
