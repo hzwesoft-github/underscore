@@ -66,6 +66,43 @@ func (ctx *UciContext) AddPackage(name string) error {
 
 func (ctx *UciContext) Set(ptr *UciPtr) error {
 	ret, err := C.uci_set(ctx.ptr, ptr.ptr)
+	return ctx.uci_ret_to_error(ret, err)
+}
+
+func (ctx *UciContext) AddSection(packageName string, sectionName string, sectionType string) error {
+	cPackageName := C.CString(packageName)
+	var ptr C.struct_uci_ptr
+	ptr._package = cPackageName
+	return nil
+}
+
+func (ctx *UciContext) uci_set(ptr *C.struct_uci_ptr) error {
+	ret, err := C.uci_set(ctx.ptr, ptr)
+	return ctx.uci_ret_to_error(ret, err)
+}
+
+func (ctx *UciContext) uci_add_list(ptr *C.struct_uci_ptr) error {
+	ret, err := C.uci_add_list(ctx.ptr, ptr)
+	return ctx.uci_ret_to_error(ret, err)
+}
+
+func (ctx *UciContext) uci_add_section(pkg *C.struct_uci_package, typ *C.char) error {
+	var section *C.struct_uci_section
+	ret, err := C.uci_add_section(ctx.ptr, pkg, typ, &section)
+	return ctx.uci_ret_to_error(ret, err)
+}
+
+func (ctx *UciContext) uci_commit(pkg *C.struct_uci_package, overwrite bool) error {
+	ret, err := C.uci_commit(ctx.ptr, &pkg, C.bool(overwrite))
+	return ctx.uci_ret_to_error(ret, err)
+}
+
+func (ctx *UciContext) uci_unload(pkg *C.struct_uci_package) error {
+	ret, err := C.uci_unload(ctx.ptr, pkg)
+	return ctx.uci_ret_to_error(ret, err)
+}
+
+func (ctx *UciContext) uci_ret_to_error(ret C.int, err error) error {
 	if err != nil {
 		return err
 	}
@@ -73,13 +110,6 @@ func (ctx *UciContext) Set(ptr *UciPtr) error {
 		return fmt.Errorf("%d: %s", int(ret), ctx.ErrorString(""))
 	}
 
-	return nil
-}
-
-func (ctx *UciContext) AddSection(packageName string, sectionName string, sectionType string) error {
-	cPackageName := C.CString(packageName)
-	var ptr C.struct_uci_ptr
-	ptr._package = cPackageName
 	return nil
 }
 
