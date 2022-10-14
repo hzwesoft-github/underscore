@@ -27,23 +27,66 @@ static void list_sections(struct uci_package *package, struct uci_section **sect
 	*section_len = i;
 }
 
+static void list_options(struct uci_section *section, struct uci_option **option, int *option_len)
+{
+	int i;
+	struct uci_element *element;
+
+	i = 0;
+	uci_foreach_element(&section->options, element)
+  {
+		i++;
+  }
+
+	struct uci_option **ptr = calloc(i, sizeof(struct uci_option*));
+
+	i = 0;
+	uci_foreach_element(&section->options, element)
+  {
+		ptr[i++] = uci_to_option(element);
+  }
+
+	option = ptr;
+	*option_len = i;
+}
+
 static void option_str_value(struct uci_option *option, char *value)
 {
-
+	value = option->v.string;
 }
 
 static void option_list_value(struct uci_option *option, char **list, int *list_len)
 {
+	int i;
+	struct uci_element *element = NULL;
 
+	i = 0;
+	uci_foreach_element(&option->v.list, element)
+  {
+    i++;
+  }
+
+	char **ptr = calloc(i, sizeof(char*));
+	i = 0;
+	uci_foreach_element(&option->v.list, element)
+  {
+		ptr[i++] = element->name;
+  }
+
+	list = ptr;
+	*list_len = i;
 }
 
 */
 import "C"
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
 	"unsafe"
+
+	"github.com/hzwesoft-github/underscore/lang"
 )
 
 type UciOptonType int
@@ -131,10 +174,57 @@ func (ctx *UciContext) DelPackage(name string) error {
 	return os.Remove(config)
 }
 
+func (ctx *UciContext) Set(packageName, sectionName, optionName, value string) error {
+	var uciptr C.struct_uci_ptr
+
+	// TODO
+	if lang.IsBlank(packageName) {
+		return errors.New("ng: package name must specified")
+	}
+
+	cPackageName := C.CString(packageName)
+	defer C.free(unsafe.Pointer(cPackageName))
+
+	cSectionName := C.CString(sectionName)
+	defer C.free(unsafe.Pointer(cSectionName))
+
+	cOptionName := C.CString(optionName)
+	defer C.free(unsafe.Pointer(cOptionName))
+
+	cvalue := C.CString(value)
+	defer C.free(unsafe.Pointer(cvalue))
+
+	return ctx.uci_set(&uciptr)
+}
+
+func (ctx *UciContext) AddUnnamedSection(packageName, sectionType string) error {
+	// TODO
+	return nil
+}
+
+func (ctx *UciContext) AddListOption(packageName, sectionName, optionName, value string) error {
+	// TODO
+	return nil
+}
+
+func (ctx *UciContext) Del(packageName, sectionName, optionName string) error {
+	// TODO
+	return nil
+}
+
+func (ctx *UciContext) DelListOption(packageName, sectionName, optionName, value string) error {
+	// TODO
+	return nil
+}
+
 // * UciPackage
 
 func (pkg *UciPackage) Unload() error {
 	return pkg.parent.uci_unload(pkg.ptr)
+}
+
+func (pkg *UciPackage) Commit(overwrite bool) error {
+	return pkg.parent.uci_commit(pkg.ptr, overwrite)
 }
 
 func (pkg *UciPackage) LoadSection(name string) *UciSection {
@@ -197,12 +287,13 @@ func (pkg *UciPackage) DelUnnamedSection(section *UciSection) error {
 // FIXME
 func (pkg *UciPackage) ListSections() []UciSection {
 	var csections *C.struct_uci_section
-	var clength *C.int
-	C.list_sections(pkg.ptr, &csections, clength)
+	var clength C.int
+
+	C.list_sections(pkg.ptr, &csections, &clength)
 
 	sectionPtr := unsafe.Pointer(csections)
 	defer C.free(sectionPtr)
-	length := int(*clength)
+	length := int(clength)
 
 	sectionArray := (*[1 << 10]C.struct_uci_section)(sectionPtr)
 	slice := sectionArray[0:length:length]
@@ -218,20 +309,44 @@ func (pkg *UciPackage) ListSections() []UciSection {
 
 // * UciSection
 
-// TODO
+// FIXME
 func (section *UciSection) LoadOption(name string) *UciOption {
 	coption := section.parent.parent.uci_lookup_option(section.ptr, name)
 	if coption == nil {
 		return nil
 	}
 
-	option := &UciOption{}
-	option.Name = name
+	option := &UciOption{
+		Name:   name,
+		ptr:    coption,
+		parent: section,
+	}
+
 	if coption._type == C.UCI_TYPE_STRING {
 		option.Type = UCI_TYPE_STRING
+		var cvalue *C.char
+		C.option_str_value(option.ptr, cvalue)
+		option.Value = C.GoString(cvalue)
 
 	} else if coption._type == C.UCI_TYPE_LIST {
 		option.Type = UCI_TYPE_LIST
+		var cvalues *C.char
+		var clength C.int
+
+		C.option_list_value(option.ptr, &cvalues, &clength)
+
+		valuePtr := unsafe.Pointer(cvalues)
+		defer C.free(valuePtr)
+		length := int(clength)
+
+		valueArray := (*[1 << 10]*C.char)(valuePtr)
+		slice := valueArray[0:length:length]
+
+		option.Values = make([]string, 0)
+		for _, v := range slice {
+			name := C.GoString(v)
+			option.Values = append(option.Values, name)
+		}
 
 	} else {
 		return nil
@@ -240,6 +355,101 @@ func (section *UciSection) LoadOption(name string) *UciOption {
 	return option
 }
 
+func (section *UciSection) SetStringOption(name string, value string) error {
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+
+	cvalue := C.CString(value)
+	defer C.free(unsafe.Pointer(cvalue))
+
+	var uciptr C.struct_uci_ptr
+
+	uciptr._package = section.parent.ptr.e.name
+	uciptr.section = section.ptr.e.name
+	uciptr.option = cname
+	uciptr.value = cvalue
+
+	return section.parent.parent.uci_set(&uciptr)
+}
+
+func (section *UciSection) AddListOption(name string, values ...string) (err error) {
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+
+	for _, value := range values {
+		cvalue := C.CString(value)
+		defer C.free(unsafe.Pointer(cvalue))
+
+		var uciptr C.struct_uci_ptr
+
+		uciptr._package = section.parent.ptr.e.name
+		uciptr.section = section.ptr.e.name
+		uciptr.option = cname
+		uciptr.value = cvalue
+
+		if err = section.parent.parent.uci_add_list(&uciptr); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (section *UciSection) DelOption(name string) error {
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+
+	var uciptr C.struct_uci_ptr
+
+	uciptr._package = section.parent.ptr.e.name
+	uciptr.section = section.ptr.e.name
+	uciptr.option = cname
+
+	return section.parent.parent.uci_delete(&uciptr)
+}
+
+func (section *UciSection) DelFromList(name string, value string) error {
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+
+	cvalue := C.CString(value)
+	defer C.free(unsafe.Pointer(cvalue))
+
+	var uciptr C.struct_uci_ptr
+
+	uciptr._package = section.parent.ptr.e.name
+	uciptr.section = section.ptr.e.name
+	uciptr.option = cname
+	uciptr.value = cvalue
+
+	return section.parent.parent.uci_del_list(&uciptr)
+}
+
+// FIXME
+func (section *UciSection) ListOptions() []UciOption {
+	var coptions *C.struct_uci_option
+	var clength C.int
+
+	C.list_options(section.ptr, &coptions, &clength)
+
+	optionPtr := unsafe.Pointer(coptions)
+	defer C.free(optionPtr)
+	length := int(clength)
+
+	optionArray := (*[1 << 10]C.struct_uci_option)(optionPtr)
+	slice := optionArray[0:length:length]
+
+	options := make([]UciOption, 0)
+	for _, v := range slice {
+		name := C.GoString(v.e.name)
+		options = append(options, *section.LoadOption(name))
+	}
+
+	return options
+}
+
+// * internal
+
 func (ctx *UciContext) uci_set(ptr *C.struct_uci_ptr) error {
 	ret, err := C.uci_set(ctx.ptr, ptr)
 	return ctx.uci_ret_to_error(ret, err)
@@ -247,6 +457,11 @@ func (ctx *UciContext) uci_set(ptr *C.struct_uci_ptr) error {
 
 func (ctx *UciContext) uci_delete(ptr *C.struct_uci_ptr) error {
 	ret, err := C.uci_delete(ctx.ptr, ptr)
+	return ctx.uci_ret_to_error(ret, err)
+}
+
+func (ctx *UciContext) uci_del_list(ptr *C.struct_uci_ptr) error {
+	ret, err := C.uci_del_list(ctx.ptr, ptr)
 	return ctx.uci_ret_to_error(ret, err)
 }
 
