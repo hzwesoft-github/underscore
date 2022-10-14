@@ -3,6 +3,40 @@ package openwrt
 /*
 #include <uci.h>
 #include <stdlib.h>
+
+static void list_sections(struct uci_package *package, struct uci_section **section, int *section_len)
+{
+	int i;
+	struct uci_element *element;
+
+	i = 0;
+	uci_foreach_element(&package->sections, element)
+  {
+		i++;
+  }
+
+	struct uci_section **ptr = calloc(i, sizeof(struct uci_section*));
+
+	i = 0;
+	uci_foreach_element(&package->sections, element)
+  {
+		ptr[i++] = uci_to_section(element);
+  }
+
+	section = ptr;
+	*section_len = i;
+}
+
+static void option_str_value(struct uci_option *option, char *value)
+{
+
+}
+
+static void option_list_value(struct uci_option *option, char **list, int *list_len)
+{
+
+}
+
 */
 import "C"
 import (
@@ -10,6 +44,13 @@ import (
 	"os"
 	"path"
 	"unsafe"
+)
+
+type UciOptonType int
+
+const (
+	UCI_TYPE_STRING UciOptonType = iota
+	UCI_TYPE_LIST
 )
 
 const (
@@ -21,26 +62,27 @@ type UciContext struct {
 }
 
 type UciPackage struct {
+	Name string
+
 	ptr    *C.struct_uci_package
 	parent *UciContext
 }
 
 type UciSection struct {
+	Name string
+
 	ptr    *C.struct_uci_section
 	parent *UciPackage
 }
 
 type UciOption struct {
+	Type   UciOptonType
+	Name   string
+	Value  string
+	Values []string
+
 	ptr    *C.struct_uci_option
 	parent *UciSection
-}
-
-type UciElement struct {
-	ptr *C.struct_uci_element
-}
-
-type UciPtr struct {
-	ptr *C.struct_uci_ptr
 }
 
 func NewUciContext() *UciContext {
@@ -61,16 +103,7 @@ func (ctx *UciContext) LoadPackage(name string) *UciPackage {
 		return nil
 	}
 
-	return &UciPackage{cpackage, ctx}
-}
-
-// ~ FIXME
-func (ctx *UciContext) LookupPtr(str string) *UciPtr {
-	ptr, err := ctx.uci_lookup_ptr(str)
-	if err != nil {
-		return nil
-	}
-	return &UciPtr{ptr}
+	return &UciPackage{name, cpackage, ctx}
 }
 
 func (ctx *UciContext) AddPackage(name string) error {
@@ -110,7 +143,7 @@ func (pkg *UciPackage) LoadSection(name string) *UciSection {
 		return nil
 	}
 
-	return &UciSection{csection, pkg}
+	return &UciSection{name, csection, pkg}
 }
 
 func (pkg *UciPackage) AddSection(name string, typ string) error {
@@ -137,10 +170,12 @@ func (pkg *UciPackage) AddUnnamedSection(typ string) *UciSection {
 		return nil
 	}
 
-	return &UciSection{csection, pkg}
+	name := C.GoString(csection.e.name)
+
+	return &UciSection{name, csection, pkg}
 }
 
-func (pkg *UciPackage) DelSection(name string) {
+func (pkg *UciPackage) DelSection(name string) error {
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
 
@@ -148,19 +183,70 @@ func (pkg *UciPackage) DelSection(name string) {
 	uciptr._package = pkg.ptr.e.name
 	uciptr.section = cname
 
-	// FIXME
+	return pkg.parent.uci_delete(&uciptr)
+}
 
+func (pkg *UciPackage) DelUnnamedSection(section *UciSection) error {
+	var uciptr C.struct_uci_ptr
+	uciptr._package = pkg.ptr.e.name
+	uciptr.section = section.ptr.e.name
+
+	return pkg.parent.uci_delete(&uciptr)
+}
+
+// FIXME
+func (pkg *UciPackage) ListSections() []UciSection {
+	var csections *C.struct_uci_section
+	var clength *C.int
+	C.list_sections(pkg.ptr, &csections, clength)
+
+	sectionPtr := unsafe.Pointer(csections)
+	defer C.free(sectionPtr)
+	length := int(*clength)
+
+	sectionArray := (*[1 << 10]C.struct_uci_section)(sectionPtr)
+	slice := sectionArray[0:length:length]
+
+	sections := make([]UciSection, 0)
+	for _, v := range slice {
+		name := C.GoString(v.e.name)
+		sections = append(sections, UciSection{name, &v, pkg})
+	}
+
+	return sections
 }
 
 // * UciSection
 
-func (ctx *UciContext) Set(ptr *UciPtr) error {
-	ret, err := C.uci_set(ctx.ptr, ptr.ptr)
-	return ctx.uci_ret_to_error(ret, err)
+// TODO
+func (section *UciSection) LoadOption(name string) *UciOption {
+	coption := section.parent.parent.uci_lookup_option(section.ptr, name)
+	if coption == nil {
+		return nil
+	}
+
+	option := &UciOption{}
+	option.Name = name
+	if coption._type == C.UCI_TYPE_STRING {
+		option.Type = UCI_TYPE_STRING
+
+	} else if coption._type == C.UCI_TYPE_LIST {
+		option.Type = UCI_TYPE_LIST
+
+	} else {
+		return nil
+	}
+
+	return option
 }
 
 func (ctx *UciContext) uci_set(ptr *C.struct_uci_ptr) error {
 	ret, err := C.uci_set(ctx.ptr, ptr)
+	return ctx.uci_ret_to_error(ret, err)
+}
+
+func (ctx *UciContext) uci_delete(ptr *C.struct_uci_ptr) error {
+	ret, err := C.uci_delete(ctx.ptr, ptr)
 	return ctx.uci_ret_to_error(ret, err)
 }
 
