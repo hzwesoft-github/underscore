@@ -84,6 +84,8 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"reflect"
+	"strings"
 	"unsafe"
 
 	"github.com/hzwesoft-github/underscore/lang"
@@ -174,12 +176,24 @@ func (ctx *UciContext) DelPackage(name string) error {
 	return os.Remove(config)
 }
 
-func (ctx *UciContext) Set(packageName, sectionName, optionName, value string) error {
-	var uciptr C.struct_uci_ptr
+// params are package name, section name, option name and value
+func (ctx *UciContext) build_uciptr(params ...string) (uciptr C.struct_uci_ptr, err error) {
+	if len(params) == 0 {
+		return uciptr, errors.New("ng: package must specified")
+	}
 
-	// TODO
+	if len(params) == 1 {
+		return uciptr, errors.New("ng: section must specified")
+	}
+
+	packageName := params[0]
 	if lang.IsBlank(packageName) {
-		return errors.New("ng: package name must specified")
+		return uciptr, errors.New("ng: package name must specified")
+	}
+
+	sectionName := params[1]
+	if lang.IsBlank(sectionName) {
+		return uciptr, errors.New("ng: section name must specified")
 	}
 
 	cPackageName := C.CString(packageName)
@@ -188,31 +202,148 @@ func (ctx *UciContext) Set(packageName, sectionName, optionName, value string) e
 	cSectionName := C.CString(sectionName)
 	defer C.free(unsafe.Pointer(cSectionName))
 
-	cOptionName := C.CString(optionName)
-	defer C.free(unsafe.Pointer(cOptionName))
+	uciptr._package = cPackageName
+	uciptr.section = cSectionName
 
-	cvalue := C.CString(value)
-	defer C.free(unsafe.Pointer(cvalue))
+	if len(params) > 2 {
+		optionName := params[2]
 
-	return ctx.uci_set(&uciptr)
+		if !lang.IsBlank(optionName) {
+			cOptionName := C.CString(optionName)
+			defer C.free(unsafe.Pointer(cOptionName))
+
+			uciptr.option = cOptionName
+		}
+	}
+
+	if len(params) > 3 {
+		value := params[3]
+
+		if !lang.IsBlank(value) {
+			cValue := C.CString(value)
+			defer C.free(unsafe.Pointer(cValue))
+
+			uciptr.value = cValue
+		}
+	}
+
+	return uciptr, nil
 }
 
-func (ctx *UciContext) AddUnnamedSection(packageName, sectionType string) error {
-	// TODO
+func (ctx *UciContext) take_effect(uciptr *C.struct_uci_ptr) (err error) {
+	if err = ctx.uci_commit(uciptr.p, false); err != nil {
+		return err
+	}
+
+	return ctx.uci_unload(uciptr.p)
+}
+
+func (ctx *UciContext) Set(packageName, sectionName, optionName, value string) error {
+	uciptr, err := ctx.build_uciptr(packageName, sectionName, optionName, value)
+	if err != nil {
+		return err
+	}
+
+	err = ctx.uci_set(&uciptr)
+	if err != nil {
+		return err
+	}
+
+	return ctx.take_effect(&uciptr)
+}
+
+func (ctx *UciContext) Marshal(packageName, sectionName, sectionType string, obj any) error {
+	if lang.IsBlank(packageName) || lang.IsBlank(sectionName) {
+		return errors.New("ng: package or section must not be empty")
+	}
+
+	pkg := ctx.LoadPackage((packageName))
+	if pkg == nil {
+		ctx.AddPackage(packageName)
+
+		pkg = ctx.LoadPackage(packageName)
+		if pkg == nil {
+			return fmt.Errorf("ng: package %s create error", packageName)
+		}
+	}
+	defer pkg.Unload()
+
+	// FIXME 增加有名和无名的Section
+	section := pkg.LoadSection(sectionName)
+	if section != nil {
+		if err := pkg.DelSection(sectionName); err != nil {
+			return nil
+		}
+
+		pkg.AddSection(sectionName, sectionType)
+		return fmt.Errorf("ng: section %s.%s create error", packageName, sectionName)
+	}
+
+	typ := reflect.TypeOf(obj)
+	val := reflect.ValueOf(obj)
+	if typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+		val = val.Elem()
+	}
+
+	if typ.Kind() != reflect.Struct && typ.Kind() != reflect.Map {
+		return errors.New("ng: obj must be struct or map")
+	}
+
+	switch typ.Kind() {
+	case reflect.Struct:
+		var optionName string
+
+		for i := 0; i < typ.NumField(); i++ {
+			omitEmpty := false
+			field := typ.Field(i)
+
+			tagValue := field.Tag.Get("uci")
+			if tagValue == "-" {
+				continue
+			}
+
+			value := val.Field(i)
+			if value.Kind() != reflect.String || value.Kind() != reflect.Slice {
+				return fmt.Errorf("ng: struct field value must string or []string: %s %s", typ.Name(), field.Name)
+			}
+			if value.Kind() == reflect.Slice && value.Elem().Kind() != reflect.String {
+				return fmt.Errorf("ng: struct field value must string or []string: %s %s", typ.Name(), field.Name)
+			}
+
+			if tagValue == "" {
+				optionName = field.Name
+			} else {
+				tags := strings.Split(tagValue, ",")
+				if len(tags) == 0 || len(tags) > 2 {
+					return fmt.Errorf("ng: tag format error: %s %s", typ.Name(), field.Name)
+				}
+
+				optionName = tags[0]
+				if len(tags) > 1 {
+					if tags[1] != "omitempty" {
+						return fmt.Errorf("ng: tag format error: %s %s", typ.Name(), field.Name)
+					}
+
+					omitEmpty = true
+				}
+			}
+
+			switch value.Kind() {
+			case reflect.String:
+
+			case reflect.Slice:
+
+			}
+
+		}
+	case reflect.Map:
+	}
+
 	return nil
 }
 
-func (ctx *UciContext) AddListOption(packageName, sectionName, optionName, value string) error {
-	// TODO
-	return nil
-}
-
-func (ctx *UciContext) Del(packageName, sectionName, optionName string) error {
-	// TODO
-	return nil
-}
-
-func (ctx *UciContext) DelListOption(packageName, sectionName, optionName, value string) error {
+func (ctx *UciContext) Unmarshal(packageName, sectionName string, obj any) error {
 	// TODO
 	return nil
 }
@@ -244,25 +375,27 @@ func (pkg *UciPackage) AddSection(name string, typ string) error {
 	defer C.free(unsafe.Pointer(ctype))
 
 	var uciptr C.struct_uci_ptr
-	uciptr._package = pkg.ptr.e.name
+
+	uciptr.p = pkg.ptr
+	// uciptr._package = pkg.ptr.e.name
 	uciptr.section = cname
 	uciptr.value = ctype
 
 	return pkg.parent.uci_set(&uciptr)
 }
 
-func (pkg *UciPackage) AddUnnamedSection(typ string) *UciSection {
+func (pkg *UciPackage) AddUnnamedSection(typ string) (*UciSection, error) {
 	ctype := C.CString(typ)
 	defer C.free(unsafe.Pointer(ctype))
 
 	csection, err := pkg.parent.uci_add_section(pkg.ptr, ctype)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	name := C.GoString(csection.e.name)
 
-	return &UciSection{name, csection, pkg}
+	return &UciSection{name, csection, pkg}, nil
 }
 
 func (pkg *UciPackage) DelSection(name string) error {
@@ -270,7 +403,9 @@ func (pkg *UciPackage) DelSection(name string) error {
 	defer C.free(unsafe.Pointer(cname))
 
 	var uciptr C.struct_uci_ptr
-	uciptr._package = pkg.ptr.e.name
+
+	uciptr.p = pkg.ptr
+	// uciptr._package = pkg.ptr.e.name
 	uciptr.section = cname
 
 	return pkg.parent.uci_delete(&uciptr)
@@ -278,7 +413,9 @@ func (pkg *UciPackage) DelSection(name string) error {
 
 func (pkg *UciPackage) DelUnnamedSection(section *UciSection) error {
 	var uciptr C.struct_uci_ptr
-	uciptr._package = pkg.ptr.e.name
+
+	uciptr.p = pkg.ptr
+	// uciptr._package = pkg.ptr.e.name
 	uciptr.section = section.ptr.e.name
 
 	return pkg.parent.uci_delete(&uciptr)
@@ -364,8 +501,10 @@ func (section *UciSection) SetStringOption(name string, value string) error {
 
 	var uciptr C.struct_uci_ptr
 
-	uciptr._package = section.parent.ptr.e.name
-	uciptr.section = section.ptr.e.name
+	uciptr.p = section.parent.ptr
+	uciptr.s = section.ptr
+	// uciptr._package = section.parent.ptr.e.name
+	// uciptr.section = section.ptr.e.name
 	uciptr.option = cname
 	uciptr.value = cvalue
 
@@ -382,8 +521,10 @@ func (section *UciSection) AddListOption(name string, values ...string) (err err
 
 		var uciptr C.struct_uci_ptr
 
-		uciptr._package = section.parent.ptr.e.name
-		uciptr.section = section.ptr.e.name
+		uciptr.p = section.parent.ptr
+		uciptr.s = section.ptr
+		// uciptr._package = section.parent.ptr.e.name
+		// uciptr.section = section.ptr.e.name
 		uciptr.option = cname
 		uciptr.value = cvalue
 
@@ -401,8 +542,10 @@ func (section *UciSection) DelOption(name string) error {
 
 	var uciptr C.struct_uci_ptr
 
-	uciptr._package = section.parent.ptr.e.name
-	uciptr.section = section.ptr.e.name
+	uciptr.p = section.parent.ptr
+	uciptr.s = section.ptr
+	// uciptr._package = section.parent.ptr.e.name
+	// uciptr.section = section.ptr.e.name
 	uciptr.option = cname
 
 	return section.parent.parent.uci_delete(&uciptr)
@@ -417,8 +560,10 @@ func (section *UciSection) DelFromList(name string, value string) error {
 
 	var uciptr C.struct_uci_ptr
 
-	uciptr._package = section.parent.ptr.e.name
-	uciptr.section = section.ptr.e.name
+	uciptr.p = section.parent.ptr
+	uciptr.s = section.ptr
+	// uciptr._package = section.parent.ptr.e.name
+	// uciptr.section = section.ptr.e.name
 	uciptr.option = cname
 	uciptr.value = cvalue
 

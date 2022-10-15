@@ -6,8 +6,9 @@ package openwrt
 */
 import "C"
 import (
-	"encoding/json"
 	"unsafe"
+
+	"github.com/hzwesoft-github/underscore/json"
 )
 
 type BlobBuf struct {
