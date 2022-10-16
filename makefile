@@ -1,6 +1,4 @@
-TARGET1 = ubus_demo.out
-# TARGET2 = notify_demo.out
-# TARGET3 = event_demo.out
+TARGET1 = uci_demo.out
 
 # change to yours
 BUILD_DIR=/opt/neptune-gateway/build

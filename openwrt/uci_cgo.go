@@ -2,7 +2,9 @@ package openwrt
 
 /*
 #include <uci.h>
+#include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 static void list_sections(struct uci_package *package, struct uci_section **section, int *section_len)
 {
@@ -15,15 +17,16 @@ static void list_sections(struct uci_package *package, struct uci_section **sect
 		i++;
   }
 
-	struct uci_section **ptr = calloc(i, sizeof(struct uci_section*));
+	struct uci_section *ptr = calloc(i, sizeof(struct uci_section));
 
 	i = 0;
 	uci_foreach_element(&package->sections, element)
   {
-		ptr[i++] = uci_to_section(element);
+		struct uci_section *p = uci_to_section(element);
+		ptr[i++] = *p;
   }
 
-	section = ptr;
+	*section = &ptr[0];
 	*section_len = i;
 }
 
@@ -38,24 +41,25 @@ static void list_options(struct uci_section *section, struct uci_option **option
 		i++;
   }
 
-	struct uci_option **ptr = calloc(i, sizeof(struct uci_option*));
+	struct uci_option *ptr = calloc(i, sizeof(struct uci_option));
 
 	i = 0;
 	uci_foreach_element(&section->options, element)
   {
-		ptr[i++] = uci_to_option(element);
+    struct uci_option *p = uci_to_option(element);
+		ptr[i++] = *p;
   }
 
-	option = ptr;
+	*option = &ptr[0];
 	*option_len = i;
 }
 
-static void option_str_value(struct uci_option *option, char *value)
+static void option_str_value(struct uci_option *option, char **value)
 {
-	value = option->v.string;
+	*value = option->v.string;
 }
 
-static void option_list_value(struct uci_option *option, char **list, int *list_len)
+static void option_list_value(struct uci_option *option, char ***list, int *list_len, unsigned long *total_len)
 {
 	int i;
 	struct uci_element *element = NULL;
@@ -67,14 +71,17 @@ static void option_list_value(struct uci_option *option, char **list, int *list_
   }
 
 	char **ptr = calloc(i, sizeof(char*));
+
 	i = 0;
 	uci_foreach_element(&option->v.list, element)
   {
-		ptr[i++] = element->name;
+		char *p = element->name;
+		ptr[i++] = p;
   }
 
-	list = ptr;
+	*list = &ptr[0];
 	*list_len = i;
+	*total_len = i * sizeof(char*);
 }
 
 */
@@ -114,7 +121,9 @@ type UciPackage struct {
 }
 
 type UciSection struct {
-	Name string
+	Name      string
+	Type      string
+	Anonymous bool
 
 	ptr    *C.struct_uci_section
 	parent *UciPackage
@@ -142,13 +151,13 @@ func (ctx *UciContext) Free() {
 
 // * UciContext
 
-func (ctx *UciContext) LoadPackage(name string) *UciPackage {
+func (ctx *UciContext) LoadPackage(name string) (*UciPackage, error) {
 	cpackage, err := ctx.uci_load(name)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
-	return &UciPackage{name, cpackage, ctx}
+	return &UciPackage{name, cpackage, ctx}, nil
 }
 
 func (ctx *UciContext) AddPackage(name string) error {
@@ -252,102 +261,6 @@ func (ctx *UciContext) Set(packageName, sectionName, optionName, value string) e
 	return ctx.take_effect(&uciptr)
 }
 
-func (ctx *UciContext) Marshal(packageName, sectionName, sectionType string, obj any) error {
-	if lang.IsBlank(packageName) || lang.IsBlank(sectionName) {
-		return errors.New("ng: package or section must not be empty")
-	}
-
-	pkg := ctx.LoadPackage((packageName))
-	if pkg == nil {
-		ctx.AddPackage(packageName)
-
-		pkg = ctx.LoadPackage(packageName)
-		if pkg == nil {
-			return fmt.Errorf("ng: package %s create error", packageName)
-		}
-	}
-	defer pkg.Unload()
-
-	// FIXME 增加有名和无名的Section
-	section := pkg.LoadSection(sectionName)
-	if section != nil {
-		if err := pkg.DelSection(sectionName); err != nil {
-			return nil
-		}
-
-		pkg.AddSection(sectionName, sectionType)
-		return fmt.Errorf("ng: section %s.%s create error", packageName, sectionName)
-	}
-
-	typ := reflect.TypeOf(obj)
-	val := reflect.ValueOf(obj)
-	if typ.Kind() == reflect.Pointer {
-		typ = typ.Elem()
-		val = val.Elem()
-	}
-
-	if typ.Kind() != reflect.Struct && typ.Kind() != reflect.Map {
-		return errors.New("ng: obj must be struct or map")
-	}
-
-	switch typ.Kind() {
-	case reflect.Struct:
-		var optionName string
-
-		for i := 0; i < typ.NumField(); i++ {
-			omitEmpty := false
-			field := typ.Field(i)
-
-			tagValue := field.Tag.Get("uci")
-			if tagValue == "-" {
-				continue
-			}
-
-			value := val.Field(i)
-			if value.Kind() != reflect.String || value.Kind() != reflect.Slice {
-				return fmt.Errorf("ng: struct field value must string or []string: %s %s", typ.Name(), field.Name)
-			}
-			if value.Kind() == reflect.Slice && value.Elem().Kind() != reflect.String {
-				return fmt.Errorf("ng: struct field value must string or []string: %s %s", typ.Name(), field.Name)
-			}
-
-			if tagValue == "" {
-				optionName = field.Name
-			} else {
-				tags := strings.Split(tagValue, ",")
-				if len(tags) == 0 || len(tags) > 2 {
-					return fmt.Errorf("ng: tag format error: %s %s", typ.Name(), field.Name)
-				}
-
-				optionName = tags[0]
-				if len(tags) > 1 {
-					if tags[1] != "omitempty" {
-						return fmt.Errorf("ng: tag format error: %s %s", typ.Name(), field.Name)
-					}
-
-					omitEmpty = true
-				}
-			}
-
-			switch value.Kind() {
-			case reflect.String:
-
-			case reflect.Slice:
-
-			}
-
-		}
-	case reflect.Map:
-	}
-
-	return nil
-}
-
-func (ctx *UciContext) Unmarshal(packageName, sectionName string, obj any) error {
-	// TODO
-	return nil
-}
-
 // * UciPackage
 
 func (pkg *UciPackage) Unload() error {
@@ -364,7 +277,7 @@ func (pkg *UciPackage) LoadSection(name string) *UciSection {
 		return nil
 	}
 
-	return &UciSection{name, csection, pkg}
+	return &UciSection{name, C.GoString(csection._type), bool(csection.anonymous), csection, pkg}
 }
 
 func (pkg *UciPackage) AddSection(name string, typ string) error {
@@ -374,7 +287,7 @@ func (pkg *UciPackage) AddSection(name string, typ string) error {
 	ctype := C.CString(typ)
 	defer C.free(unsafe.Pointer(ctype))
 
-	var uciptr C.struct_uci_ptr
+	uciptr := C.struct_uci_ptr{}
 
 	uciptr.p = pkg.ptr
 	// uciptr._package = pkg.ptr.e.name
@@ -395,14 +308,14 @@ func (pkg *UciPackage) AddUnnamedSection(typ string) (*UciSection, error) {
 
 	name := C.GoString(csection.e.name)
 
-	return &UciSection{name, csection, pkg}, nil
+	return &UciSection{name, C.GoString(csection._type), bool(csection.anonymous), csection, pkg}, nil
 }
 
 func (pkg *UciPackage) DelSection(name string) error {
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
 
-	var uciptr C.struct_uci_ptr
+	uciptr := C.struct_uci_ptr{}
 
 	uciptr.p = pkg.ptr
 	// uciptr._package = pkg.ptr.e.name
@@ -412,7 +325,7 @@ func (pkg *UciPackage) DelSection(name string) error {
 }
 
 func (pkg *UciPackage) DelUnnamedSection(section *UciSection) error {
-	var uciptr C.struct_uci_ptr
+	uciptr := C.struct_uci_ptr{}
 
 	uciptr.p = pkg.ptr
 	// uciptr._package = pkg.ptr.e.name
@@ -421,7 +334,6 @@ func (pkg *UciPackage) DelUnnamedSection(section *UciSection) error {
 	return pkg.parent.uci_delete(&uciptr)
 }
 
-// FIXME
 func (pkg *UciPackage) ListSections() []UciSection {
 	var csections *C.struct_uci_section
 	var clength C.int
@@ -438,15 +350,250 @@ func (pkg *UciPackage) ListSections() []UciSection {
 	sections := make([]UciSection, 0)
 	for _, v := range slice {
 		name := C.GoString(v.e.name)
-		sections = append(sections, UciSection{name, &v, pkg})
+		sections = append(sections, UciSection{name, C.GoString(v._type), bool(v.anonymous), &v, pkg})
 	}
 
 	return sections
 }
 
+func (pkg *UciPackage) Marshal(sectionName, sectionType string, src any, autocommit bool) (err error) {
+	var section *UciSection
+
+	if lang.IsBlank(sectionName) {
+		if section, err = pkg.AddUnnamedSection(sectionType); err != nil {
+			return err
+		}
+	} else {
+		section = pkg.LoadSection(sectionName)
+		if section != nil {
+			if err = pkg.DelSection(sectionName); err != nil {
+				return err
+			}
+		}
+
+		if err = pkg.AddSection(sectionName, sectionType); err != nil {
+			return err
+		}
+
+		section = pkg.LoadSection(sectionName)
+	}
+
+	return pkg.MarshalSection(section, src, autocommit)
+}
+
+func (pkg *UciPackage) MarshalSection(section *UciSection, src any, autocommit bool) (err error) {
+	typ := reflect.TypeOf(src)
+	val := reflect.ValueOf(src)
+	if typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+		val = val.Elem()
+	}
+
+	if typ.Kind() != reflect.Struct && typ.Kind() != reflect.Map {
+		return errors.New("ng: src must be struct or map")
+	}
+
+	var optionName string
+	switch typ.Kind() {
+	case reflect.Struct:
+		for i := 0; i < typ.NumField(); i++ {
+			omitEmpty := false
+			field := typ.Field(i)
+
+			tagValue := field.Tag.Get("uci")
+			if tagValue == "-" {
+				continue
+			}
+
+			value := val.Field(i)
+			if value.Kind() != reflect.String && value.Kind() != reflect.Slice {
+				return fmt.Errorf("ng: struct field value must string or []string: %s %s", typ.Name(), field.Name)
+			}
+			if tagValue == "" {
+				optionName = field.Name
+			} else {
+				tags := strings.Split(tagValue, ",")
+				if len(tags) == 0 || len(tags) > 2 {
+					return fmt.Errorf("ng: tag format error: %s %s", typ.Name(), field.Name)
+				}
+
+				optionName = tags[0]
+				if len(tags) > 1 {
+					if tags[1] != "omitempty" {
+						return fmt.Errorf("ng: tag format error: %s %s", typ.Name(), field.Name)
+					}
+
+					omitEmpty = true
+				}
+			}
+
+			switch value.Kind() {
+			case reflect.String:
+				optionValue := value.String()
+				if optionValue == "" && omitEmpty {
+					continue
+				}
+
+				section.SetStringOption(optionName, optionValue)
+			case reflect.Slice:
+				if value.Len() == 0 && omitEmpty {
+					continue
+				}
+
+				listValues := make([]string, 0)
+				for i := 0; i < value.Len(); i++ {
+					if value.Index(i).Kind() != reflect.String {
+						return fmt.Errorf("ng: struct field value must string or []string: %s %s", typ.Name(), field.Name)
+					}
+
+					listValues = append(listValues, value.Index(i).String())
+				}
+
+				section.AddListOption(optionName, listValues...)
+			}
+
+		}
+	case reflect.Map:
+		iter := val.MapRange()
+		for iter.Next() {
+			optionName = iter.Key().String()
+			value := iter.Value()
+
+			if value.Kind() != reflect.String && value.Kind() != reflect.Slice {
+				return fmt.Errorf("ng: map value must string or []string: %s %s", typ.Name(), optionName)
+			}
+			if value.Kind() == reflect.Slice && value.Elem().Kind() != reflect.String {
+				return fmt.Errorf("ng: map value must string or []string: %s %s", typ.Name(), optionName)
+			}
+
+			switch value.Kind() {
+			case reflect.String:
+				optionValue := value.String()
+				section.SetStringOption(optionName, optionValue)
+			case reflect.Slice:
+				listValues := make([]string, 0)
+				for i := 0; i < value.Len(); i++ {
+					listValues = append(listValues, value.Index(i).String())
+				}
+
+				section.AddListOption(optionName, listValues...)
+			}
+		}
+	}
+
+	if autocommit {
+		return pkg.Commit(false)
+	}
+
+	return nil
+}
+
+func (pkg *UciPackage) Unmarshal(sectionName string, obj any) (err error) {
+	if lang.IsBlank(sectionName) {
+		return errors.New("ng: section name must be specified")
+	}
+
+	section := pkg.LoadSection(sectionName)
+	if section == nil {
+		return fmt.Errorf("ng: section %s not found", sectionName)
+	}
+
+	return pkg.UnmarshalSection(section, obj)
+}
+
+func (pkg *UciPackage) UnmarshalSection(section *UciSection, dest any) error {
+	typ := reflect.TypeOf(dest)
+	if typ.Kind() != reflect.Pointer && typ.Kind() != reflect.Map {
+		return errors.New("ng: dest must be *struct or map")
+	}
+	if typ.Kind() == reflect.Pointer && (typ.Elem().Kind() != reflect.Struct && typ.Elem().Kind() != reflect.Map) {
+		return errors.New("ng: dest must be *struct or map")
+	}
+
+	val := reflect.ValueOf(dest)
+	if typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+		val = val.Elem()
+	}
+
+	var optionName string
+	switch typ.Kind() {
+	case reflect.Struct:
+		for i := 0; i < typ.NumField(); i++ {
+			field := typ.Field(i)
+
+			tagValue := field.Tag.Get("uci")
+			if tagValue == "-" {
+				continue
+			}
+
+			value := val.Field(i)
+			if !value.CanSet() {
+				continue
+			}
+
+			if tagValue == "" {
+				optionName = field.Name
+			} else {
+				tags := strings.Split(tagValue, ",")
+				if len(tags) == 0 || len(tags) > 2 {
+					return fmt.Errorf("ng: tag format error: %s %s", typ.Name(), field.Name)
+				}
+
+				optionName = tags[0]
+			}
+
+			option := section.LoadOption(optionName)
+			if option == nil {
+				continue
+			}
+
+			switch option.Type {
+			case UCI_TYPE_STRING:
+				optionValue := option.Value
+				if value.Kind() != reflect.String {
+					return fmt.Errorf("ng: struct field value must string: %s %s", typ.Name(), field.Name)
+				}
+
+				value.SetString(optionValue)
+			case UCI_TYPE_LIST:
+				optionValues := option.Values
+				if value.Kind() != reflect.Slice {
+					return fmt.Errorf("ng: struct field value must []string: %s %s", typ.Name(), field.Name)
+				}
+
+				if len(optionValues) == 0 {
+					continue
+				}
+
+				for _, optionValue := range optionValues {
+					value = reflect.Append(value, reflect.ValueOf(optionValue))
+				}
+				val.Field(i).Set(value)
+
+			}
+		}
+	case reflect.Map:
+		options := section.ListOptions()
+		if len(options) == 0 {
+			return nil
+		}
+
+		for _, option := range options {
+			switch option.Type {
+			case UCI_TYPE_STRING:
+				val.SetMapIndex(reflect.ValueOf(optionName), reflect.ValueOf(option.Value))
+			case UCI_TYPE_LIST:
+				val.SetMapIndex(reflect.ValueOf(optionName), reflect.ValueOf(option.Values))
+			}
+		}
+	}
+
+	return nil
+}
+
 // * UciSection
 
-// FIXME
 func (section *UciSection) LoadOption(name string) *UciOption {
 	coption := section.parent.parent.uci_lookup_option(section.ptr, name)
 	if coption == nil {
@@ -462,15 +609,16 @@ func (section *UciSection) LoadOption(name string) *UciOption {
 	if coption._type == C.UCI_TYPE_STRING {
 		option.Type = UCI_TYPE_STRING
 		var cvalue *C.char
-		C.option_str_value(option.ptr, cvalue)
+		C.option_str_value(option.ptr, &cvalue)
 		option.Value = C.GoString(cvalue)
 
 	} else if coption._type == C.UCI_TYPE_LIST {
 		option.Type = UCI_TYPE_LIST
-		var cvalues *C.char
+		var cvalues **C.char
 		var clength C.int
+		var ctotalLen C.ulong
 
-		C.option_list_value(option.ptr, &cvalues, &clength)
+		C.option_list_value(option.ptr, &cvalues, &clength, &ctotalLen)
 
 		valuePtr := unsafe.Pointer(cvalues)
 		defer C.free(valuePtr)
@@ -499,7 +647,7 @@ func (section *UciSection) SetStringOption(name string, value string) error {
 	cvalue := C.CString(value)
 	defer C.free(unsafe.Pointer(cvalue))
 
-	var uciptr C.struct_uci_ptr
+	uciptr := C.struct_uci_ptr{}
 
 	uciptr.p = section.parent.ptr
 	uciptr.s = section.ptr
@@ -519,7 +667,7 @@ func (section *UciSection) AddListOption(name string, values ...string) (err err
 		cvalue := C.CString(value)
 		defer C.free(unsafe.Pointer(cvalue))
 
-		var uciptr C.struct_uci_ptr
+		uciptr := C.struct_uci_ptr{}
 
 		uciptr.p = section.parent.ptr
 		uciptr.s = section.ptr
@@ -540,7 +688,7 @@ func (section *UciSection) DelOption(name string) error {
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
 
-	var uciptr C.struct_uci_ptr
+	uciptr := C.struct_uci_ptr{}
 
 	uciptr.p = section.parent.ptr
 	uciptr.s = section.ptr
@@ -558,7 +706,7 @@ func (section *UciSection) DelFromList(name string, value string) error {
 	cvalue := C.CString(value)
 	defer C.free(unsafe.Pointer(cvalue))
 
-	var uciptr C.struct_uci_ptr
+	uciptr := C.struct_uci_ptr{}
 
 	uciptr.p = section.parent.ptr
 	uciptr.s = section.ptr
@@ -570,8 +718,11 @@ func (section *UciSection) DelFromList(name string, value string) error {
 	return section.parent.parent.uci_del_list(&uciptr)
 }
 
-// FIXME
 func (section *UciSection) ListOptions() []UciOption {
+	if section.Anonymous {
+		return nil
+	}
+
 	var coptions *C.struct_uci_option
 	var clength C.int
 
@@ -632,6 +783,7 @@ func (ctx *UciContext) uci_commit(pkg *C.struct_uci_package, overwrite bool) err
 }
 
 func (ctx *UciContext) uci_load(name string) (pkg *C.struct_uci_package, err error) {
+	name = path.Join(UCI_CONFIG_FOLDER, name)
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
 
@@ -697,6 +849,12 @@ func (ctx *UciContext) uci_ret_to_error(ret C.int, err error) error {
 }
 
 func (ctx *UciContext) ErrorString(prefix string) string {
-	// TODO
-	return ""
+	cprefix := C.CString(prefix)
+	defer C.free(unsafe.Pointer(cprefix))
+
+	var dest *C.char
+	defer C.free(unsafe.Pointer(dest))
+	C.uci_get_errorstr(ctx.ptr, &dest, cprefix)
+
+	return C.GoString(dest)
 }
