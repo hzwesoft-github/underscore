@@ -92,6 +92,7 @@ import (
 	"os"
 	"path"
 	"reflect"
+	"strconv"
 	"strings"
 	"unsafe"
 
@@ -160,10 +161,10 @@ func (ctx *UciContext) LoadPackage(name string) (*UciPackage, error) {
 	return &UciPackage{name, cpackage, ctx}, nil
 }
 
-func (ctx *UciContext) AddPackage(name string) error {
+func (ctx *UciContext) AddPackage(name string) (*UciPackage, error) {
 	config := path.Join(UCI_CONFIG_FOLDER, name)
 	if _, err := os.Stat(config); err == nil {
-		return nil
+		return ctx.LoadPackage(name)
 	}
 
 	file, err := os.Create(config)
@@ -173,7 +174,11 @@ func (ctx *UciContext) AddPackage(name string) error {
 		}
 	}()
 
-	return err
+	if err != nil {
+		return nil, err
+	}
+
+	return ctx.LoadPackage(name)
 }
 
 func (ctx *UciContext) DelPackage(name string) error {
@@ -356,6 +361,122 @@ func (pkg *UciPackage) ListSections() []UciSection {
 	return sections
 }
 
+func _ToStringValue(value reflect.Value) (string, error) {
+	switch value.Kind() {
+	case reflect.Bool:
+		return lang.TernaryOperator(value.Bool(), "true", "false"), nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return strconv.FormatInt(value.Int(), 10), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return strconv.FormatUint(value.Uint(), 10), nil
+	case reflect.Float32, reflect.Float64:
+		return strconv.FormatFloat(value.Float(), 'f', 2, 64), nil
+	case reflect.String:
+		return value.String(), nil
+	default:
+		return "", fmt.Errorf("can't marshal %s", value.Kind().String())
+	}
+}
+
+func _MarshalValue(section *UciSection, optionName string, value reflect.Value, omitEmpty bool) error {
+	switch value.Kind() {
+	case reflect.Bool:
+		section.SetStringOption(optionName, lang.TernaryOperator(value.Bool(), "true", "false"))
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		section.SetStringOption(optionName, strconv.FormatInt(value.Int(), 10))
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		section.SetStringOption(optionName, strconv.FormatUint(value.Uint(), 10))
+	case reflect.Float32, reflect.Float64:
+		section.SetStringOption(optionName, strconv.FormatFloat(value.Float(), 'f', 2, 64))
+	case reflect.String:
+		if value.String() == "" && omitEmpty {
+			return nil
+		}
+		section.SetStringOption(optionName, value.String())
+	case reflect.Pointer, reflect.Interface:
+		return _MarshalValue(section, optionName, value.Elem(), omitEmpty)
+	case reflect.Slice:
+		if value.Len() == 0 && omitEmpty {
+			return nil
+		}
+
+		listValues := make([]string, 0)
+		for i := 0; i < value.Len(); i++ {
+			str, err := _ToStringValue(value.Index(i))
+			if err != nil {
+				return err
+			}
+
+			listValues = append(listValues, str)
+		}
+		return section.AddListOption(optionName, listValues...)
+	case reflect.Map:
+		return _MarshalMap(section, value.Type(), value)
+	case reflect.Struct:
+		return _MarshalStruct(section, value.Type(), value)
+	default:
+		return fmt.Errorf("can't marshal %s", value.Kind().String())
+	}
+
+	return nil
+}
+
+func _MarshalStruct(section *UciSection, typ reflect.Type, val reflect.Value) error {
+	var optionName string
+
+	for i := 0; i < typ.NumField(); i++ {
+		omitEmpty := false
+		field := typ.Field(i)
+
+		tagValue := field.Tag.Get("uci")
+		if tagValue == "-" {
+			continue
+		}
+
+		value := val.Field(i)
+
+		if tagValue == "" {
+			optionName = field.Name
+		} else {
+			tags := strings.Split(tagValue, ",")
+			if len(tags) == 0 || len(tags) > 2 {
+				return fmt.Errorf("ng: tag format error: %s %s", typ.Name(), field.Name)
+			}
+
+			optionName = tags[0]
+			if len(tags) > 1 {
+				if tags[1] != "omitempty" {
+					return fmt.Errorf("ng: tag format error: %s %s", typ.Name(), field.Name)
+				}
+
+				omitEmpty = true
+			}
+		}
+
+		if err := _MarshalValue(section, optionName, value, omitEmpty); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func _MarshalMap(section *UciSection, typ reflect.Type, val reflect.Value) error {
+	var optionName string
+
+	iter := val.MapRange()
+	for iter.Next() {
+		optionName = iter.Key().String()
+		value := iter.Value()
+
+		if err := _MarshalValue(section, optionName, value, false); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (pkg *UciPackage) Marshal(sectionName, sectionType string, src any, autocommit bool) (err error) {
 	var section *UciSection
 
@@ -390,99 +511,186 @@ func (pkg *UciPackage) MarshalSection(section *UciSection, src any, autocommit b
 	}
 
 	if typ.Kind() != reflect.Struct && typ.Kind() != reflect.Map {
-		return errors.New("ng: src must be struct or map")
+		return errors.New("ng: src must be struct, *struct or map")
 	}
 
-	var optionName string
 	switch typ.Kind() {
 	case reflect.Struct:
-		for i := 0; i < typ.NumField(); i++ {
-			omitEmpty := false
-			field := typ.Field(i)
-
-			tagValue := field.Tag.Get("uci")
-			if tagValue == "-" {
-				continue
-			}
-
-			value := val.Field(i)
-			if value.Kind() != reflect.String && value.Kind() != reflect.Slice {
-				return fmt.Errorf("ng: struct field value must string or []string: %s %s", typ.Name(), field.Name)
-			}
-			if tagValue == "" {
-				optionName = field.Name
-			} else {
-				tags := strings.Split(tagValue, ",")
-				if len(tags) == 0 || len(tags) > 2 {
-					return fmt.Errorf("ng: tag format error: %s %s", typ.Name(), field.Name)
-				}
-
-				optionName = tags[0]
-				if len(tags) > 1 {
-					if tags[1] != "omitempty" {
-						return fmt.Errorf("ng: tag format error: %s %s", typ.Name(), field.Name)
-					}
-
-					omitEmpty = true
-				}
-			}
-
-			switch value.Kind() {
-			case reflect.String:
-				optionValue := value.String()
-				if optionValue == "" && omitEmpty {
-					continue
-				}
-
-				section.SetStringOption(optionName, optionValue)
-			case reflect.Slice:
-				if value.Len() == 0 && omitEmpty {
-					continue
-				}
-
-				listValues := make([]string, 0)
-				for i := 0; i < value.Len(); i++ {
-					if value.Index(i).Kind() != reflect.String {
-						return fmt.Errorf("ng: struct field value must string or []string: %s %s", typ.Name(), field.Name)
-					}
-
-					listValues = append(listValues, value.Index(i).String())
-				}
-
-				section.AddListOption(optionName, listValues...)
-			}
-
-		}
+		_MarshalStruct(section, typ, val)
 	case reflect.Map:
-		iter := val.MapRange()
-		for iter.Next() {
-			optionName = iter.Key().String()
-			value := iter.Value()
-
-			if value.Kind() != reflect.String && value.Kind() != reflect.Slice {
-				return fmt.Errorf("ng: map value must string or []string: %s %s", typ.Name(), optionName)
-			}
-			if value.Kind() == reflect.Slice && value.Elem().Kind() != reflect.String {
-				return fmt.Errorf("ng: map value must string or []string: %s %s", typ.Name(), optionName)
-			}
-
-			switch value.Kind() {
-			case reflect.String:
-				optionValue := value.String()
-				section.SetStringOption(optionName, optionValue)
-			case reflect.Slice:
-				listValues := make([]string, 0)
-				for i := 0; i < value.Len(); i++ {
-					listValues = append(listValues, value.Index(i).String())
-				}
-
-				section.AddListOption(optionName, listValues...)
-			}
-		}
+		_MarshalMap(section, typ, val)
 	}
 
 	if autocommit {
 		return pkg.Commit(false)
+	}
+
+	return nil
+}
+
+// TODO
+
+func _FromStringValue(typ reflect.Type, value string) (val reflect.Value, err error) {
+	switch typ.Kind() {
+	case reflect.Bool:
+		v, err := strconv.ParseBool(value)
+		if err != nil {
+			return val, err
+		}
+
+		return reflect.ValueOf(v), nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		v, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return val, err
+		}
+
+		return reflect.ValueOf(v), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		v, err := strconv.ParseUint(value, 10, 64)
+		if err != nil {
+			return val, err
+		}
+
+		return reflect.ValueOf(v), nil
+	case reflect.Float32, reflect.Float64:
+		v, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return val, err
+		}
+
+		return reflect.ValueOf(v), nil
+	case reflect.String:
+		return reflect.ValueOf(value), nil
+	default:
+		return val, fmt.Errorf("can't unmarshal %s", value)
+	}
+}
+
+func _UnmarshalListValue(section *UciSection, optionValues []string, value reflect.Value, origin reflect.Value) error {
+	if len(optionValues) == 0 {
+		return nil
+	}
+
+	switch value.Kind() {
+	case reflect.Slice:
+		for _, optionValue := range optionValues {
+			v, err := _FromStringValue(value.Type().Elem(), optionValue)
+			if err != nil {
+				return err
+			}
+
+			value = reflect.Append(value, v)
+		}
+
+		origin.Set(value)
+	default:
+		return fmt.Errorf("can't unmarshal %s for %s", value.Kind().String(), optionValues)
+	}
+
+	return nil
+}
+
+func _UnmarshalStringValue(section *UciSection, optionValue string, value reflect.Value) error {
+	switch value.Kind() {
+	case reflect.Bool:
+		v, err := strconv.ParseBool(optionValue)
+		if err != nil {
+			return err
+		}
+
+		value.SetBool(v)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		v, err := strconv.ParseInt(optionValue, 10, 64)
+		if err != nil {
+			return err
+		}
+
+		value.SetInt(v)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		v, err := strconv.ParseUint(optionValue, 10, 64)
+		if err != nil {
+			return err
+		}
+
+		value.SetUint(v)
+	case reflect.Float32, reflect.Float64:
+		v, err := strconv.ParseFloat(optionValue, 64)
+		if err != nil {
+			return err
+		}
+
+		value.SetFloat(v)
+	case reflect.String:
+		value.SetString(optionValue)
+	case reflect.Pointer, reflect.Interface:
+		return _UnmarshalStringValue(section, optionValue, value.Elem())
+	case reflect.Struct:
+		return _UnmarshalStruct(section, value.Type(), value)
+	default:
+		return fmt.Errorf("can't unmarshal %s for %s", value.Kind().String(), optionValue)
+	}
+
+	return nil
+}
+
+func _UnmarshalStruct(section *UciSection, typ reflect.Type, val reflect.Value) error {
+	var optionName string
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+
+		tagValue := field.Tag.Get("uci")
+		if tagValue == "-" {
+			continue
+		}
+
+		value := val.Field(i)
+		if !value.CanSet() {
+			continue
+		}
+
+		if tagValue == "" {
+			optionName = field.Name
+		} else {
+			tags := strings.Split(tagValue, ",")
+			if len(tags) == 0 || len(tags) > 2 {
+				return fmt.Errorf("ng: tag format error: %s %s", typ.Name(), field.Name)
+			}
+
+			optionName = tags[0]
+		}
+
+		option := section.LoadOption(optionName)
+		if option == nil {
+			continue
+		}
+
+		switch option.Type {
+		case UCI_TYPE_STRING:
+			return _UnmarshalStringValue(section, option.Value, value)
+		case UCI_TYPE_LIST:
+			return _UnmarshalListValue(section, option.Values, value, val.Field(i))
+		}
+	}
+
+	return nil
+}
+
+func _UnmarshalMap(section *UciSection, typ reflect.Type, val reflect.Value) error {
+	options := section.ListOptions()
+	if len(options) == 0 {
+		return nil
+	}
+
+	var optionName string
+
+	for _, option := range options {
+		switch option.Type {
+		case UCI_TYPE_STRING:
+			val.SetMapIndex(reflect.ValueOf(optionName), reflect.ValueOf(option.Value))
+		case UCI_TYPE_LIST:
+			val.SetMapIndex(reflect.ValueOf(optionName), reflect.ValueOf(option.Values))
+		}
 	}
 
 	return nil
@@ -516,77 +724,11 @@ func (pkg *UciPackage) UnmarshalSection(section *UciSection, dest any) error {
 		val = val.Elem()
 	}
 
-	var optionName string
 	switch typ.Kind() {
 	case reflect.Struct:
-		for i := 0; i < typ.NumField(); i++ {
-			field := typ.Field(i)
-
-			tagValue := field.Tag.Get("uci")
-			if tagValue == "-" {
-				continue
-			}
-
-			value := val.Field(i)
-			if !value.CanSet() {
-				continue
-			}
-
-			if tagValue == "" {
-				optionName = field.Name
-			} else {
-				tags := strings.Split(tagValue, ",")
-				if len(tags) == 0 || len(tags) > 2 {
-					return fmt.Errorf("ng: tag format error: %s %s", typ.Name(), field.Name)
-				}
-
-				optionName = tags[0]
-			}
-
-			option := section.LoadOption(optionName)
-			if option == nil {
-				continue
-			}
-
-			switch option.Type {
-			case UCI_TYPE_STRING:
-				optionValue := option.Value
-				if value.Kind() != reflect.String {
-					return fmt.Errorf("ng: struct field value must string: %s %s", typ.Name(), field.Name)
-				}
-
-				value.SetString(optionValue)
-			case UCI_TYPE_LIST:
-				optionValues := option.Values
-				if value.Kind() != reflect.Slice {
-					return fmt.Errorf("ng: struct field value must []string: %s %s", typ.Name(), field.Name)
-				}
-
-				if len(optionValues) == 0 {
-					continue
-				}
-
-				for _, optionValue := range optionValues {
-					value = reflect.Append(value, reflect.ValueOf(optionValue))
-				}
-				val.Field(i).Set(value)
-
-			}
-		}
+		return _UnmarshalStruct(section, typ, val)
 	case reflect.Map:
-		options := section.ListOptions()
-		if len(options) == 0 {
-			return nil
-		}
-
-		for _, option := range options {
-			switch option.Type {
-			case UCI_TYPE_STRING:
-				val.SetMapIndex(reflect.ValueOf(optionName), reflect.ValueOf(option.Value))
-			case UCI_TYPE_LIST:
-				val.SetMapIndex(reflect.ValueOf(optionName), reflect.ValueOf(option.Values))
-			}
-		}
+		return _UnmarshalMap(section, typ, val)
 	}
 
 	return nil

@@ -26,8 +26,9 @@ var (
 )
 
 type TestMessage struct {
-	F1 string `json:"f1"`
-	F2 int32  `json:"f2"`
+	F1 string   `json:"f1"`
+	F2 int32    `json:"f2"`
+	F3 []string `json:"array"`
 }
 
 func ubusHandler(obj string, method string, req *openwrt.UbusRequestData, msg string) {
