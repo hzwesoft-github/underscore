@@ -22,3 +22,17 @@ func HasDMapKey[K1 comparable, K2 comparable, V any](m DMap[K1, K2, V], k1 K1, k
 	_, ok := m[k1][k2]
 	return ok
 }
+
+type SliceMap[K comparable, V any] map[K][]V
+
+func NewSliceMap[K comparable, V any]() SliceMap[K, V] {
+	return make(SliceMap[K, V])
+}
+
+func AddSliceMapValue[K comparable, V any](m SliceMap[K, V], key K, value V) {
+	if _, ok := m[key]; !ok {
+		m[key] = make([]V, 0)
+	}
+
+	m[key] = append(m[key], value)
+}
