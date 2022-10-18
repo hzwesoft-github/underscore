@@ -266,6 +266,26 @@ func (ctx *UciContext) Set(packageName, sectionName, optionName, value string) e
 	return ctx.take_effect(&uciptr)
 }
 
+func (ctx *UciContext) Marshal(packageName, sectionName, sectionType string, src any) (err error) {
+	pkg, err := ctx.AddPackage(packageName)
+	if err != nil {
+		return err
+	}
+	defer pkg.Unload()
+
+	return pkg.Marshal(sectionName, sectionType, src, true)
+}
+
+func (ctx *UciContext) Unmarshal(packageName, sectionName string, dest any) (err error) {
+	pkg, err := ctx.LoadPackage(packageName)
+	if err != nil {
+		return err
+	}
+	defer pkg.Unload()
+
+	return pkg.Unmarshal(sectionName, dest)
+}
+
 // * UciPackage
 
 func (pkg *UciPackage) Unload() error {
@@ -528,8 +548,6 @@ func (pkg *UciPackage) MarshalSection(section *UciSection, src any, autocommit b
 	return nil
 }
 
-// TODO
-
 func _FromStringValue(typ reflect.Type, value string) (val reflect.Value, err error) {
 	switch typ.Kind() {
 	case reflect.Bool:
@@ -539,14 +557,70 @@ func _FromStringValue(typ reflect.Type, value string) (val reflect.Value, err er
 		}
 
 		return reflect.ValueOf(v), nil
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+	case reflect.Int:
+		v, err := strconv.Atoi(value)
+		if err != nil {
+			return val, err
+		}
+
+		return reflect.ValueOf(v), nil
+	case reflect.Int8:
+		v, err := strconv.ParseInt(value, 10, 8)
+		if err != nil {
+			return val, err
+		}
+
+		return reflect.ValueOf(int8(v)), nil
+	case reflect.Int16:
+		v, err := strconv.ParseInt(value, 10, 16)
+		if err != nil {
+			return val, err
+		}
+
+		return reflect.ValueOf(int16(v)), nil
+	case reflect.Int32:
+		v, err := strconv.ParseInt(value, 10, 32)
+		if err != nil {
+			return val, err
+		}
+
+		return reflect.ValueOf(int32(v)), nil
+	case reflect.Int64:
 		v, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
 			return val, err
 		}
 
 		return reflect.ValueOf(v), nil
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+	case reflect.Uint:
+		v, err := strconv.ParseUint(value, 10, 0)
+		if err != nil {
+			return val, err
+		}
+
+		return reflect.ValueOf(uint(v)), nil
+	case reflect.Uint8:
+		v, err := strconv.ParseUint(value, 10, 8)
+		if err != nil {
+			return val, err
+		}
+
+		return reflect.ValueOf(uint8(v)), nil
+	case reflect.Uint16:
+		v, err := strconv.ParseUint(value, 10, 16)
+		if err != nil {
+			return val, err
+		}
+
+		return reflect.ValueOf(uint16(v)), nil
+	case reflect.Uint32:
+		v, err := strconv.ParseUint(value, 10, 32)
+		if err != nil {
+			return val, err
+		}
+
+		return reflect.ValueOf(uint32(v)), nil
+	case reflect.Uint64:
 		v, err := strconv.ParseUint(value, 10, 64)
 		if err != nil {
 			return val, err
@@ -645,6 +719,11 @@ func _UnmarshalStruct(section *UciSection, typ reflect.Type, val reflect.Value) 
 		}
 
 		value := val.Field(i)
+		if value.Type().Kind() == reflect.Struct {
+			_UnmarshalStruct(section, value.Type(), value)
+			continue
+		}
+
 		if !value.CanSet() {
 			continue
 		}
@@ -667,9 +746,13 @@ func _UnmarshalStruct(section *UciSection, typ reflect.Type, val reflect.Value) 
 
 		switch option.Type {
 		case UCI_TYPE_STRING:
-			return _UnmarshalStringValue(section, option.Value, value)
+			if err := _UnmarshalStringValue(section, option.Value, value); err != nil {
+				return err
+			}
 		case UCI_TYPE_LIST:
-			return _UnmarshalListValue(section, option.Values, value, val.Field(i))
+			if err := _UnmarshalListValue(section, option.Values, value, val.Field(i)); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -696,7 +779,7 @@ func _UnmarshalMap(section *UciSection, typ reflect.Type, val reflect.Value) err
 	return nil
 }
 
-func (pkg *UciPackage) Unmarshal(sectionName string, obj any) (err error) {
+func (pkg *UciPackage) Unmarshal(sectionName string, dest any) (err error) {
 	if lang.IsBlank(sectionName) {
 		return errors.New("ng: section name must be specified")
 	}
@@ -706,7 +789,7 @@ func (pkg *UciPackage) Unmarshal(sectionName string, obj any) (err error) {
 		return fmt.Errorf("ng: section %s not found", sectionName)
 	}
 
-	return pkg.UnmarshalSection(section, obj)
+	return pkg.UnmarshalSection(section, dest)
 }
 
 func (pkg *UciPackage) UnmarshalSection(section *UciSection, dest any) error {

@@ -171,8 +171,25 @@ func editOptionByHierarchyApi(ctx *openwrt.UciContext) {
 }
 
 type Bind struct {
-	Str string   `uci:"str"`
-	Arr []string `uci:"arr"`
+	Bool     bool     `uci:"bool"`
+	Int      int      `uci:"int"`
+	Int32    int32    `uci:"int32"`
+	Int64    int64    `uci:"int64"`
+	Uint     uint     `uci:"uint"`
+	Uint32   uint32   `uci:"uint32"`
+	Uint64   uint64   `uci:"uint64"`
+	Str      string   `uci:"str"`
+	BoolList []bool   `uci:"bool_list"`
+	IntList  []int    `uci:"int_list"`
+	UintList []uint   `uci:"uint_list"`
+	StrList  []string `uci:"str_list"`
+	Inner    struct {
+		Int8      int8    `uci:"int8"`
+		Int16     int16   `uci:"int16"`
+		Uint8     uint8   `uci:"uint8"`
+		Uint16    uint16  `uci:"uint16"`
+		Int32List []int32 `uci:"int32_list"`
+	}
 }
 
 func marshalApi(ctx *openwrt.UciContext) {
@@ -183,9 +200,25 @@ func marshalApi(ctx *openwrt.UciContext) {
 	defer pkg.Unload()
 
 	b := &Bind{
-		Str: "111",
-		Arr: []string{"aaa", "bbb"},
+		Bool:     true,
+		Int:      1,
+		Int32:    2,
+		Int64:    3,
+		Uint:     4,
+		Uint32:   5,
+		Uint64:   6,
+		Str:      "string",
+		BoolList: []bool{true, false},
+		IntList:  []int{7, 8},
+		UintList: []uint{9, 10},
+		StrList:  []string{"string1", "string2"},
 	}
+
+	b.Inner.Int8 = 11
+	b.Inner.Int16 = 12
+	b.Inner.Uint8 = 13
+	b.Inner.Uint16 = 14
+	b.Inner.Int32List = []int32{15, 16}
 
 	if err = pkg.Marshal("b", "bind", b, true); err != nil {
 		fmt.Println(err)
