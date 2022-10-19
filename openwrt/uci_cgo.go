@@ -99,10 +99,10 @@ import (
 	"github.com/hzwesoft-github/underscore/lang"
 )
 
-type UciOptonType int
+type UciOptionType int
 
 const (
-	UCI_TYPE_STRING UciOptonType = iota
+	UCI_TYPE_STRING UciOptionType = iota
 	UCI_TYPE_LIST
 )
 
@@ -131,7 +131,7 @@ type UciSection struct {
 }
 
 type UciOption struct {
-	Type   UciOptonType
+	Type   UciOptionType
 	Name   string
 	Value  string
 	Values []string
@@ -193,21 +193,21 @@ func (ctx *UciContext) DelPackage(name string) error {
 // params are package name, section name, option name and value
 func (ctx *UciContext) build_uciptr(params ...string) (uciptr C.struct_uci_ptr, err error) {
 	if len(params) == 0 {
-		return uciptr, errors.New("ng: package must specified")
+		return uciptr, errors.New("ng: package must be specified")
 	}
 
 	if len(params) == 1 {
-		return uciptr, errors.New("ng: section must specified")
+		return uciptr, errors.New("ng: section must be specified")
 	}
 
 	packageName := params[0]
 	if lang.IsBlank(packageName) {
-		return uciptr, errors.New("ng: package name must specified")
+		return uciptr, errors.New("ng: package name must be specified")
 	}
 
 	sectionName := params[1]
 	if lang.IsBlank(sectionName) {
-		return uciptr, errors.New("ng: section name must specified")
+		return uciptr, errors.New("ng: section name must be specified")
 	}
 
 	cPackageName := C.CString(packageName)
@@ -379,6 +379,32 @@ func (pkg *UciPackage) ListSections() []UciSection {
 	}
 
 	return sections
+}
+
+type SectionFilter func(section *UciSection) bool
+
+func (pkg *UciPackage) QuerySection(cb SectionFilter) []UciSection {
+	result := make([]UciSection, 0)
+	sections := pkg.ListSections()
+	for _, section := range sections {
+		if cb(&section) {
+			result = append(result, section)
+		}
+	}
+
+	return result
+}
+
+func (pkg *UciPackage) QueryOne(cb SectionFilter) *UciSection {
+	sections := pkg.ListSections()
+
+	for i := 0; i < len(sections); i++ {
+		if cb(&sections[i]) {
+			return &sections[i]
+		}
+	}
+
+	return nil
 }
 
 func _ToStringValue(value reflect.Value) (string, error) {
@@ -945,6 +971,7 @@ func (section *UciSection) DelFromList(name string, value string) error {
 
 func (section *UciSection) ListOptions() []UciOption {
 	if section.Anonymous {
+		// FIXME 找到其他方法列出匿名节的option
 		return nil
 	}
 
