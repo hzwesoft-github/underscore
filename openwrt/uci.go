@@ -1,5 +1,12 @@
 package openwrt
 
+import (
+	"errors"
+	"fmt"
+
+	"github.com/hzwesoft-github/underscore/lang"
+)
+
 type UciClient struct {
 	Context *UciContext
 	Package *UciPackage
@@ -7,33 +14,74 @@ type UciClient struct {
 	shouldCommit bool
 }
 
-func NewUciClient(packageName string) (*UciClient, error) {
-	ctx := NewUciContext()
+func NewUciClient(context *UciContext, packageName string) (*UciClient, error) {
+	if context == nil {
+		context = NewUciContext()
+	}
 
-	pkg, err := ctx.AddPackage(packageName)
+	pkg, err := context.AddPackage(packageName)
 	if err != nil {
-		ctx.Free()
+		context.Free()
 		return nil, err
 	}
 
-	return &UciClient{ctx, pkg, false}, nil
+	return &UciClient{context, pkg, false}, nil
+}
+
+func (client *UciClient) Flush() error {
+	if !client.shouldCommit {
+		return nil
+	}
+	return client.Package.Commit(false)
 }
 
 func (client *UciClient) Free() {
-	defer client.Context.Free()
 	defer client.Package.Unload()
+
+	if !client.shouldCommit {
+		return
+	}
 
 	client.Package.Commit(false)
 }
 
+func (client *UciClient) Remove() error {
+	return client.Context.DelPackage(client.Package.Name)
+}
+
 func (client *UciClient) Save(fragment *UciFragment) error {
-	// TODO
+	if fragment.Section == nil && (lang.IsBlank(fragment.SectionName) || lang.IsBlank(fragment.SectionType)) {
+		return errors.New("ng: fragment section must be specified")
+	}
+
+	if fragment.Section != nil {
+		if err := client.Package.MarshalSection(fragment.Section, fragment.Content, false); err != nil {
+			return err
+		}
+	} else {
+		if err := client.Package.Marshal(fragment.SectionName, fragment.SectionType, fragment.Content, false); err != nil {
+			return err
+		}
+	}
+
+	client.shouldCommit = true
 	return nil
 }
 
-func (client *UciClient) Exec(command *UciCommand) error {
-	// TODO
-	return nil
+func (client *UciClient) Load(fragment *UciFragment) error {
+	if fragment.Section == nil && lang.IsBlank(fragment.SectionName) {
+		return errors.New("ng: fragment section must be specified")
+	}
+
+	if fragment.Section != nil {
+		return client.Package.UnmarshalSection(fragment.Section, &fragment.Content)
+	} else {
+		return client.Package.Unmarshal(fragment.SectionName, fragment.Content)
+	}
+}
+
+func (client *UciClient) Exec(command UciCommand) error {
+	return command.Exec(client)
 }
 
 func (client *UciClient) LoadSectionByName(name string) *UciSection {
@@ -85,50 +133,203 @@ type UciCmd_AddSection struct {
 }
 
 func (c *UciCmd_AddSection) Exec(client *UciClient) error {
-	// TODO
+	if lang.IsBlank(c.SectionType) {
+		return errors.New("ng: section type must be specified")
+	}
+
+	if lang.IsBlank(c.SectionName) {
+		section, err := client.Package.AddUnnamedSection(c.SectionType)
+		if err != nil {
+			return err
+		}
+
+		c.Section = section
+	} else {
+		if err := client.Package.AddSection(c.SectionName, c.SectionType); err != nil {
+			return err
+		}
+
+		c.Section = client.Package.LoadSection(c.SectionName)
+	}
+
+	client.shouldCommit = true
 	return nil
 }
 
 type UciCmd_DelSection struct {
 	Section     *UciSection
 	SectionName string
-	SectionType string
 }
 
 func (c *UciCmd_DelSection) Exec(client *UciClient) error {
-	// TODO
+	if c.Section == nil && lang.IsBlank(c.SectionName) {
+		return errors.New("ng: cmd section must be specified")
+	}
+
+	if c.Section != nil {
+		if c.Section.Anonymous {
+			if err := client.Package.DelUnnamedSection(c.Section); err != nil {
+				return err
+			}
+		} else {
+			if err := client.Package.DelSection(c.Section.Name); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err := client.Package.DelSection(c.SectionName); err != nil {
+			return err
+		}
+	}
+
+	client.shouldCommit = true
 	return nil
 }
 
 type UciCmd_SetOption struct {
+	Section     *UciSection
+	SectionName string
+	OptionName  string
+	OptionValue string
 }
 
 func (c *UciCmd_SetOption) Exec(client *UciClient) error {
-	// TODO
+	if c.Section == nil && lang.IsBlank(c.SectionName) {
+		return errors.New("ng: cmd section must be specified")
+	}
+	if lang.IsBlank(c.OptionName) {
+		return errors.New("ng: option name must be specified")
+	}
+
+	if c.Section != nil {
+		if err := c.Section.SetStringOption(c.OptionName, c.OptionValue); err != nil {
+			return err
+		}
+	} else {
+		section := client.Package.LoadSection(c.SectionName)
+		if section == nil {
+			return fmt.Errorf("ng: section %s is not exist", c.SectionName)
+		}
+		return section.SetStringOption(c.OptionName, c.OptionValue)
+	}
+
+	client.shouldCommit = true
 	return nil
 }
 
 type UciCmd_AddListOption struct {
+	Section      *UciSection
+	SectionName  string
+	OptionName   string
+	OptionValue  string
+	OptionValues []string
 }
 
 func (c *UciCmd_AddListOption) Exec(client *UciClient) error {
-	// TODO
+	if c.Section == nil && lang.IsBlank(c.SectionName) {
+		return errors.New("ng: cmd section must be specified")
+	}
+	if lang.IsBlank(c.OptionName) {
+		return errors.New("ng: option name must be specified")
+	}
+
+	if c.Section != nil {
+		if c.OptionValue != "" {
+			if err := c.Section.AddListOption(c.OptionName, c.OptionValue); err != nil {
+				return err
+			}
+		}
+		if len(c.OptionValues) >= 0 {
+			if err := c.Section.AddListOption(c.OptionName, c.OptionValues...); err != nil {
+				return err
+			}
+		}
+	} else {
+		section := client.Package.LoadSection(c.SectionName)
+		if section == nil {
+			return fmt.Errorf("ng: section %s is not exist", c.SectionName)
+		}
+
+		if c.OptionValue != "" {
+			if err := section.AddListOption(c.OptionName, c.OptionValue); err != nil {
+				return err
+			}
+		}
+		if len(c.OptionValues) >= 0 {
+			if err := section.AddListOption(c.OptionName, c.OptionValues...); err != nil {
+				return err
+			}
+		}
+	}
+
+	client.shouldCommit = true
 	return nil
 }
 
 type UciCmd_DelOption struct {
+	Section     *UciSection
+	SectionName string
+	OptionName  string
 }
 
 func (c *UciCmd_DelOption) Exec(client *UciClient) error {
-	// TODO
+	if c.Section == nil && lang.IsBlank(c.SectionName) {
+		return errors.New("ng: cmd section must be specified")
+	}
+	if lang.IsBlank(c.OptionName) {
+		return errors.New("ng: option name must be specified")
+	}
+
+	if c.Section != nil {
+		if err := c.Section.DelOption(c.OptionName); err != nil {
+			return err
+		}
+	} else {
+		section := client.Package.LoadSection(c.SectionName)
+		if section == nil {
+			return fmt.Errorf("ng: section %s is not exist", c.SectionName)
+		}
+
+		if err := section.DelOption(c.OptionName); err != nil {
+			return err
+		}
+	}
+
+	client.shouldCommit = true
 	return nil
 }
 
 type UciCmd_DelFromList struct {
+	Section     *UciSection
+	SectionName string
+	OptionName  string
+	OptionValue string
 }
 
 func (c *UciCmd_DelFromList) Exec(client *UciClient) error {
-	// TODO
+	if c.Section == nil && lang.IsBlank(c.SectionName) {
+		return errors.New("ng: cmd section must be specified")
+	}
+	if lang.IsBlank(c.OptionName) {
+		return errors.New("ng: option name must be specified")
+	}
+
+	if c.Section != nil {
+		if err := c.Section.DelFromList(c.OptionName, c.OptionValue); err != nil {
+			return err
+		}
+	} else {
+		section := client.Package.LoadSection(c.SectionName)
+		if section == nil {
+			return fmt.Errorf("ng: section %s is not exist", c.SectionName)
+		}
+
+		if err := section.DelFromList(c.OptionName, c.OptionValue); err != nil {
+			return err
+		}
+	}
+
+	client.shouldCommit = true
 	return nil
 }
 

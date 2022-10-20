@@ -245,24 +245,211 @@ func unmarshalApi(ctx *openwrt.UciContext) {
 
 }
 
+func saveData(ctx *openwrt.UciContext) {
+	client, err := openwrt.NewUciClient(ctx, "ng_test")
+	if err != nil {
+		panic(err)
+	}
+	defer client.Free()
+
+	b := &Bind{
+		Bool:     true,
+		Int:      1,
+		Int32:    2,
+		Int64:    3,
+		Uint:     4,
+		Uint32:   5,
+		Uint64:   6,
+		Str:      "string",
+		BoolList: []bool{true, false},
+		IntList:  []int{7, 8},
+		UintList: []uint{9, 10},
+		StrList:  []string{"string1", "string2"},
+	}
+
+	b.Inner.Int8 = 11
+	b.Inner.Int16 = 12
+	b.Inner.Uint8 = 13
+	b.Inner.Uint16 = 14
+	b.Inner.Int32List = []int32{15, 16}
+
+	fragment := openwrt.UciFragment{
+		SectionName: "fragment_name",
+		SectionType: "fragment_type",
+		Content:     b,
+	}
+
+	client.Save(&fragment)
+
+	var cmd openwrt.UciCommand
+	cmd = &openwrt.UciCmd_AddSection{
+		SectionName: "section_name_01",
+		SectionType: "section_type_01",
+	}
+	client.Exec(cmd)
+
+	cmd = &openwrt.UciCmd_SetOption{
+		SectionName: "section_name_01",
+		OptionName:  "option_01",
+		OptionValue: "value_01",
+	}
+	client.Exec(cmd)
+
+	cmd = &openwrt.UciCmd_SetOption{
+		SectionName: "section_name_01",
+		OptionName:  "option_02",
+		OptionValue: "value_02",
+	}
+	client.Exec(cmd)
+
+	cmd = &openwrt.UciCmd_AddListOption{
+		SectionName:  "section_name_01",
+		OptionName:   "option_03",
+		OptionValue:  "list_value_01",
+		OptionValues: []string{"list_value_02", "list_value_03"},
+	}
+	client.Exec(cmd)
+
+	cmd = &openwrt.UciCmd_AddListOption{
+		SectionName:  "section_name_01",
+		OptionName:   "option_04",
+		OptionValue:  "list_value_01",
+		OptionValues: []string{"list_value_02", "list_value_03"},
+	}
+	client.Exec(cmd)
+
+	addCmd := &openwrt.UciCmd_AddSection{
+		SectionType: "section_type_02",
+	}
+	client.Exec(addCmd)
+	section := addCmd.Section
+
+	cmd = &openwrt.UciCmd_SetOption{
+		Section:     section,
+		OptionName:  "option_01",
+		OptionValue: "value_01",
+	}
+	client.Exec(cmd)
+
+	cmd = &openwrt.UciCmd_SetOption{
+		Section:     section,
+		OptionName:  "option_02",
+		OptionValue: "value_02",
+	}
+	client.Exec(cmd)
+
+	cmd = &openwrt.UciCmd_AddListOption{
+		Section:      section,
+		OptionName:   "option_03",
+		OptionValue:  "list_value_01",
+		OptionValues: []string{"list_value_02", "list_value_03"},
+	}
+	client.Exec(cmd)
+
+	cmd = &openwrt.UciCmd_AddListOption{
+		Section:      section,
+		OptionName:   "option_04",
+		OptionValue:  "list_value_01",
+		OptionValues: []string{"list_value_02", "list_value_03"},
+	}
+	client.Exec(cmd)
+
+	cmd = &openwrt.UciCmd_AddSection{
+		SectionName: "section_name_03",
+		SectionType: "section_type_03",
+	}
+	client.Exec(cmd)
+}
+
+func delData(ctx *openwrt.UciContext) {
+	client, err := openwrt.NewUciClient(ctx, "ng_test")
+	if err != nil {
+		panic(err)
+	}
+	defer client.Free()
+
+	var cmd openwrt.UciCommand
+	cmd = &openwrt.UciCmd_DelSection{
+		SectionName: "section_name_03",
+	}
+	client.Exec(cmd)
+
+	addCmd := &openwrt.UciCmd_AddSection{
+		SectionType: "section_type_03",
+	}
+	client.Exec(cmd)
+
+	cmd = &openwrt.UciCmd_DelSection{
+		Section: addCmd.Section,
+	}
+	client.Exec(cmd)
+
+	sections := client.QuerySectionByType("section_type_01")
+	for _, s := range sections {
+		cmd = &openwrt.UciCmd_DelOption{
+			SectionName: s.Name,
+			OptionName:  "option_02",
+		}
+		client.Exec(cmd)
+
+		cmd = &openwrt.UciCmd_DelFromList{
+			SectionName: s.Name,
+			OptionName:  "option_03",
+			OptionValue: "list_value_02",
+		}
+		client.Exec(cmd)
+	}
+}
+
+func queryData(ctx *openwrt.UciContext) {
+	client, err := openwrt.NewUciClient(ctx, "ng_test")
+	if err != nil {
+		panic(err)
+	}
+	defer client.Free()
+
+	b := &Bind{}
+	fragment := openwrt.UciFragment{
+		SectionName: "fragment_name",
+		SectionType: "fragment_type",
+		Content:     b,
+	}
+
+	client.Load(&fragment)
+
+	fmt.Println("load fragment:")
+	fmt.Println(fragment.Content)
+
+	sections := client.QuerySectionIncludeOption("option_01", "value_01")
+	fmt.Println("")
+	fmt.Println("sections:")
+	fmt.Println(sections)
+}
+
 func main() {
+	// basic api
+	// ctx := openwrt.NewUciContext()
+	// addByHierarchyApi(ctx)
+	// loadByHierarchyApi(ctx)
+	// editSectionByHierarchyApi(ctx)
+	// addByHierarchyApi(ctx)
+	// editOptionByHierarchyApi(ctx)
+	// marshalApi(ctx)
+	// unmarshalApi(ctx)
+	// ctx.Free()
+
+	// advanced api
+
 	ctx := openwrt.NewUciContext()
+	defer ctx.Free()
 
-	addByHierarchyApi(ctx)
+	ctx.DelPackage("ng_test")
 
-	loadByHierarchyApi(ctx)
+	saveData(ctx)
 
-	editSectionByHierarchyApi(ctx)
+	delData(ctx)
 
-	addByHierarchyApi(ctx)
-
-	editOptionByHierarchyApi(ctx)
-
-	marshalApi(ctx)
-
-	unmarshalApi(ctx)
-
-	ctx.Free()
+	queryData(ctx)
 
 	checkResult()
 }
