@@ -55,3 +55,11 @@ func SetValues[T comparable](set Set[T]) (list []T) {
 
 	return list
 }
+
+func AddToSlice[T any](slice *[]T, value ...T) {
+	if slice == nil {
+		*slice = make([]T, 0)
+	}
+
+	*slice = append(*slice, value...)
+}
