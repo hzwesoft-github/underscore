@@ -25,6 +25,8 @@ type ValidateTestSingle struct {
 	Str_Netmask    string  `v:"netmask"`
 	Str_Mac        string  `v:"macaddr"`
 	Str_Domain     string  `v:"domain"`
+	Str_URL        string  `v:"url"`
+	Str_Port       string  `v:"port"`
 	Str_Date       string  `v:"date"`
 	Str_Time       string  `v:"time"`
 	Str_DateTime   string  `v:"datetime"`
@@ -33,6 +35,10 @@ type ValidateTestSingle struct {
 	Int_Negative   int16   `v:"negative"`
 	Int_Gte0       int32   `v:"gte0"`
 	Int_Lte0       int64   `v:"lte0"`
+	Int_Port       int     `v:"port"`
+	Uint_Nonzero   uint    `v:"nonzero"`
+	Uint_Positive  uint32  `v:"positive"`
+	Uint_Port      uint64  `v:"port"`
 	Float_Nonzero  float32 `v:"nonzero"`
 	Float_Positive float32 `v:"positive"`
 	Float_Negative float32 `v:"negative"`
@@ -41,7 +47,7 @@ type ValidateTestSingle struct {
 	Pointer_Ip4    *string `v:"ip4addr"`
 }
 
-func TestNetmask(t *testing.T) {
+func TestSimpleValidate(t *testing.T) {
 	s := &ValidateTestSingle{}
 	output(Validate(s))
 
@@ -76,11 +82,145 @@ func TestNetmask(t *testing.T) {
 	s.Str_Domain = "1"
 	output(Validate(s))
 
-	s.Str_Mac = "11:22:33:44:55:66"
 	s.Str_Domain = "~!!!.baidu.com"
+	output(Validate(s))
+
+	s.Str_Domain = ".baidu.com.cn"
+	output(Validate(s))
+
+	s.Str_Domain = "baidu.com"
+	s.Str_URL = "http://1"
+	output(Validate(s))
+
+	s.Str_URL = "www.163.com"
+	output(Validate(s))
+
+	s.Str_URL = "https://www.163.com/u/r/l/"
+	s.Str_Port = "0"
+	output(Validate(s))
+
+	s.Str_Port = "65536"
+	output(Validate(s))
+
+	s.Str_Port = "65535"
+	s.Str_Date = "2022-13-02"
+	output(Validate(s))
+
+	s.Str_Date = "2022-02-01"
+	s.Str_Time = "12:00:61"
+	output(Validate(s))
+
+	s.Str_Time = "12:00:01"
+	s.Str_DateTime = "2022-13-01 12:00:01"
+	output(Validate(s))
+
+	s.Str_DateTime = "2022-01-01 12:00:01"
+	s.Int_Nonzero = 0
+	output(Validate(s))
+
+	s.Int_Nonzero = 1
+	s.Int_Positive = -1
+	output(Validate(s))
+
+	s.Int_Positive = 1
+	s.Int_Negative = 0
+	output(Validate(s))
+
+	s.Int_Negative = -1
+	s.Int_Gte0 = -1
+	output(Validate(s))
+
+	s.Int_Gte0 = 0
+	s.Int_Lte0 = 1
+	output(Validate(s))
+
+	s.Int_Lte0 = 0
+	s.Int_Port = 0
+	output(Validate(s))
+
+	s.Int_Port = 65536
+	output(Validate(s))
+
+	s.Int_Port = 65535
+	s.Uint_Nonzero = 0
+	output(Validate(s))
+
+	s.Uint_Nonzero = 1
+	s.Uint_Positive = 0
+	output(Validate(s))
+
+	s.Uint_Positive = 1
+	s.Uint_Port = 65536
+	output(Validate(s))
+
+	s.Uint_Port = 65535
+	s.Float_Nonzero = 0
+	output(Validate(s))
+
+	s.Float_Nonzero = 1
+	s.Float_Positive = -1
+	output(Validate(s))
+
+	s.Float_Positive = 1
+	s.Float_Negative = 0
+	output(Validate(s))
+
+	s.Float_Negative = -1
+	s.Float_Gte0 = -1
+	output(Validate(s))
+
+	s.Float_Gte0 = 0
+	s.Float_Lte0 = 1
+	output(Validate(s))
+
+	s.Float_Lte0 = -1
+	str := "114.114.111"
+	s.Pointer_Ip4 = &str
+	output(Validate(s))
+
+	str = "114.114.114.114"
 	output(Validate(s))
 }
 
 func output(err error) {
 	fmt.Println(err)
+}
+
+type ValidateTestSlice struct {
+	StrSlice []string `v:"required,ip4addr"`
+}
+
+func TestSliceValidate(t *testing.T) {
+	s := ValidateTestSlice{}
+	output(Validate(s))
+
+	s.StrSlice = make([]string, 0)
+	output(Validate(s))
+
+	s.StrSlice = append(s.StrSlice, "114.114.114")
+	output(Validate(s))
+
+	s.StrSlice = []string{}
+	s.StrSlice = append(s.StrSlice, "114.114.114.114", "114.114.114.")
+	output(Validate(s))
+
+	s.StrSlice = []string{}
+	s.StrSlice = append(s.StrSlice, "114.114.114.114", "114.114.114.115")
+	output(Validate(s))
+}
+
+type ValidateTestPointer struct {
+	StrPointer *string `v:"required,ip4addr"`
+}
+
+func TestPointerValidate(t *testing.T) {
+	s := &ValidateTestPointer{}
+	output(Validate(s))
+
+	str := "114.114.111"
+	s.StrPointer = &str
+	output(Validate(s))
+
+	str = "114.114.114.114"
+	output(Validate(s))
 }
