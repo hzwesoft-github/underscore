@@ -4,18 +4,29 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/url"
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/dlclark/regexp2"
 )
+
+var (
+	domainPattern *regexp2.Regexp
+)
+
+func init() {
+	domainPattern, _ = regexp2.Compile(`^(?=^.{3,255}$)[a-zA-Z0-9][-a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-a-zA-Z0-9]{0,62})+$`, regexp2.None)
+}
 
 /*
 Validate struct by field's tag. the tags currently supported as below:
 
-string: required, ip4addr, ip6addr, ip4net, ip6net, netmask, macaddr, domain, date, datetime, time
+string: required, ip4addr, ip6addr, ip4net, ip6net, netmask, macaddr, domain, url, date, datetime, time
 
-int, uint, float: nonzero, positive, negative, gte0, lte0
+int, float: nonzero, positive, negative, gte0, lte0
+
+uint: nonzero, positive
 
 pointer: required and actual type's tag
 */
@@ -93,7 +104,7 @@ func validateValue(field reflect.StructField, value reflect.Value, vtag string) 
 	case reflect.Pointer, reflect.Interface:
 		if strings.Contains(vtag, "required") {
 			if value.IsNil() {
-				return fmt.Errorf("ng: %s is required", value.Type().Name())
+				return fmt.Errorf("ng: %s is required", field.Name)
 			}
 		}
 
@@ -106,7 +117,7 @@ func validateValue(field reflect.StructField, value reflect.Value, vtag string) 
 		str := value.String()
 		if strings.Contains(vtag, "required") {
 			if IsBlank(str) {
-				return fmt.Errorf("ng: %s is required", value.Type().Name())
+				return fmt.Errorf("ng: %s is required", field.Name)
 			}
 		}
 
@@ -149,7 +160,12 @@ func validateValue(field reflect.StructField, value reflect.Value, vtag string) 
 				return err
 			}
 		}
-		if strings.Contains(vtag, "date") {
+		if strings.Contains(vtag, "url") {
+			if err := validateURL(str, field); err != nil {
+				return err
+			}
+		}
+		if strings.Contains(vtag, "date") && !strings.Contains(vtag, "datetime") {
 			if _, err := time.Parse("2006-01-02", str); err != nil {
 				return fmt.Errorf("ng: value of %s(%s) is not a valid date", field.Name, str)
 			}
@@ -159,7 +175,7 @@ func validateValue(field reflect.StructField, value reflect.Value, vtag string) 
 				return fmt.Errorf("ng: value of %s(%s) is not a valid datetime", field.Name, str)
 			}
 		}
-		if strings.Contains(vtag, "time") {
+		if strings.Contains(vtag, "time") && !strings.Contains(vtag, "datetime") {
 			if _, err := time.Parse("15:04:05", str); err != nil {
 				return fmt.Errorf("ng: value of %s(%s) is not a valid time", field.Name, str)
 			}
@@ -184,7 +200,7 @@ func validateValue(field reflect.StructField, value reflect.Value, vtag string) 
 			return fmt.Errorf("ng: value of %s is positive", field.Name)
 		}
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		// nonzero, positive, negative, gte0, lte0
+		// nonzero, positive
 		u64 := value.Uint()
 		if strings.Contains(vtag, "nonzero") && u64 == 0 {
 			return fmt.Errorf("ng: value of %s is 0", field.Name)
@@ -293,14 +309,17 @@ func validateMac(str string, field reflect.StructField) error {
 }
 
 func validateDomain(str string, field reflect.StructField) error {
-	u := str
-	if !strings.HasPrefix(u, "http://") || !strings.HasPrefix(u, "https://") {
-		u = "http://" + u
-	}
-	_, err := url.ParseRequestURI(u)
-	if err != nil {
-		return fmt.Errorf("ng: value of %s(%s) is not a valid domain", field.Name, str)
-	}
+	// TODO
 
+	// matched := domainPattern.MatchString(str)
+	// if !matched {
+	// 	return fmt.Errorf("ng: value of %s(%s) is not a valid domain", field.Name, str)
+	// }
+
+	return nil
+}
+
+func validateURL(str string, field reflect.StructField) error {
+	// TODO
 	return nil
 }
