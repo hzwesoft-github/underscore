@@ -224,3 +224,19 @@ func TestPointerValidate(t *testing.T) {
 	str = "114.114.114.114"
 	output(Validate(s))
 }
+
+type ValidateCustom struct {
+	StrPointer *string `v-custom:"required,ip4addr"`
+}
+
+func TestPointerCustom(t *testing.T) {
+	s := &ValidateCustom{}
+	output(ValidateTag(s, "v-custom"))
+
+	str := "114.114.112"
+	s.StrPointer = &str
+	output(ValidateTag(s, "v-custom"))
+
+	str = "114.114.114.114"
+	output(ValidateTag(s, "v-custom"))
+}

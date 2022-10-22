@@ -40,35 +40,43 @@ func Validate(obj any) error {
 		return nil
 	}
 
-	return validate(reflect.ValueOf(obj))
+	return validate(reflect.ValueOf(obj), "v")
 }
 
-func validate(value reflect.Value) error {
+func ValidateTag(obj any, tagname string) error {
+	if obj == nil {
+		return nil
+	}
+
+	return validate(reflect.ValueOf(obj), tagname)
+}
+
+func validate(value reflect.Value, tagname string) error {
 	if value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface {
-		return validate(value.Elem())
+		return validate(value.Elem(), tagname)
 	}
 
 	if value.Kind() != reflect.Struct {
 		return errors.New("ng: value must be struct")
 	}
 
-	return validateStruct(value)
+	return validateStruct(value, tagname)
 }
 
-func validateStruct(value reflect.Value) error {
+func validateStruct(value reflect.Value, tagname string) error {
 	typ := value.Type()
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		fieldValue := value.Field(i)
 
 		if field.Type.Kind() == reflect.Struct {
-			if err := validateStruct(fieldValue); err != nil {
+			if err := validateStruct(fieldValue, tagname); err != nil {
 				return err
 			}
 			continue
 		}
 
-		if vtag, ok := field.Tag.Lookup("v"); ok {
+		if vtag, ok := field.Tag.Lookup(tagname); ok {
 			if IsBlank(vtag) || vtag == "-" {
 				continue
 			}
