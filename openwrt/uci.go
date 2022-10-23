@@ -94,8 +94,36 @@ func (client *UciClient) QuerySectionByType(typ string) []UciSection {
 	})
 }
 
-func (client *UciClient) QuerySectionIncludeOption(name string, value string) []UciSection {
+func (client *UciClient) QuerySectionByOption(name string, value string) []UciSection {
 	return client.Package.QuerySection(func(section *UciSection) bool {
+		option := section.LoadOption(name)
+		if option == nil {
+			return false
+		}
+
+		switch option.Type {
+		case UCI_TYPE_STRING:
+			return option.Value == value
+		case UCI_TYPE_LIST:
+			for _, v := range option.Values {
+				if v == value {
+					return true
+				}
+			}
+
+			return false
+		default:
+			return false
+		}
+	})
+}
+
+func (client *UciClient) QuerySectionByTypeAndOption(typ string, name string, value string) []UciSection {
+	return client.Package.QuerySection(func(section *UciSection) bool {
+		if section.Type != typ {
+			return false
+		}
+
 		option := section.LoadOption(name)
 		if option == nil {
 			return false
