@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	logger = logrus.New()
+	logger *logrus.Logger
 
 	defaultConfig = &LoggerConfig{
 		Module:      "",
@@ -103,14 +103,22 @@ func (hook *ConsoleHook) Levels() []logrus.Level {
 	return logrus.AllLevels
 }
 
+type DummyWriter struct {
+}
+
+func (w *DummyWriter) Write(p []byte) (n int, err error) {
+	return len(p), nil
+}
+
 func InitLogger(config *LoggerConfig) {
 	if config == nil {
 		config = defaultConfig
 	}
 
-	if !lang.IsBlank(config.Module) {
-		logger.AddHook(&ModuleHook{config.Module})
-	}
+	logger = logrus.New()
+
+	globalLevel := resolveLogLevel(config.GlobalLevel)
+	logger.SetLevel(globalLevel)
 
 	switch strings.ToUpper(config.Format) {
 	case "TEXT":
@@ -123,8 +131,9 @@ func InitLogger(config *LoggerConfig) {
 		logger.SetFormatter(configTemplate.Format)
 	}
 
-	globalLevel := resolveLogLevel(config.GlobalLevel)
-	logger.SetLevel(globalLevel)
+	if !lang.IsBlank(config.Module) {
+		logger.AddHook(&ModuleHook{config.Module})
+	}
 
 	if config.Console {
 		logger.AddHook(&ConsoleHook{globalLevel})
@@ -140,6 +149,8 @@ func InitLogger(config *LoggerConfig) {
 			panic(err)
 		}
 		logger.SetOutput(file)
+	} else {
+		logger.SetOutput(&DummyWriter{})
 	}
 
 	if config.Syslog {
