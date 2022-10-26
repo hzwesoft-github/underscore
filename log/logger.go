@@ -13,7 +13,8 @@ import (
 )
 
 var (
-	logger *logrus.Logger
+	logger = logrus.New()
+	inited = false
 
 	defaultConfig = &LoggerConfig{
 		Module:      "",
@@ -115,7 +116,9 @@ func InitLogger(config *LoggerConfig) {
 		config = defaultConfig
 	}
 
-	logger = logrus.New()
+	if inited {
+		logger = logrus.New()
+	}
 
 	globalLevel := resolveLogLevel(config.GlobalLevel)
 	logger.SetLevel(globalLevel)
@@ -169,6 +172,8 @@ func InitLogger(config *LoggerConfig) {
 		}
 		logger.AddHook(&SyslogHookWrapper{hook, resolveLogLevel(config.SyslogLevel)})
 	}
+
+	inited = true
 }
 
 func resolveLogLevel(level string) logrus.Level {

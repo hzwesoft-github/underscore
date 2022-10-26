@@ -15,27 +15,27 @@ func TestDefaultLog(t *testing.T) {
 	logger.Errorln("Error level")
 }
 
-// func TestCustomLog(t *testing.T) {
-// 	config := &LoggerConfig{
-// 		Module:      "Test",
-// 		Format:      "json",
-// 		Console:     true,
-// 		File:        true,
-// 		FilePath:    "log_test.log",
-// 		Syslog:      true,
-// 		SyslogAddr:  "udp://192.168.247.143:514",
-// 		GlobalLevel: "info",
-// 		SyslogLevel: "debug",
-// 	}
+func TestCustomLog(t *testing.T) {
+	config := &LoggerConfig{
+		Module:      "Test",
+		Format:      "json",
+		Console:     true,
+		File:        true,
+		FilePath:    "log_test.log",
+		Syslog:      true,
+		SyslogAddr:  "udp://192.168.247.143:514",
+		GlobalLevel: "info",
+		SyslogLevel: "debug",
+	}
 
-// 	InitLogger(config)
+	InitLogger(config)
 
-// 	logger := GetLogger()
+	logger := GetLogger()
 
-// 	logger.Traceln("this is below default level")
-// 	logger.Debugln("this is below default level")
-// 	logger.Warnln("Warn level")
-// 	logger.Infoln("Info level")
-// 	logger.Errorln("Error level")
+	logger.Traceln("this is below default level")
+	logger.Debugln("this is below default level")
+	logger.Warnln("Warn level")
+	logger.Infoln("Info level")
+	logger.Errorln("Error level")
 
-// }
+}
