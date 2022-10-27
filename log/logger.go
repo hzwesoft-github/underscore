@@ -225,3 +225,27 @@ func resolveSyslogPriority(level string) syslog.Priority {
 func GetLogger() *logrus.Logger {
 	return logger
 }
+
+func IsTraceEnabled() bool {
+	return logger.IsLevelEnabled(logrus.TraceLevel)
+}
+
+func IsDebugEnabled() bool {
+	return logger.IsLevelEnabled(logrus.DebugLevel)
+}
+
+func IsInfoEnabled() bool {
+	return logger.IsLevelEnabled(logrus.InfoLevel)
+}
+
+func IsWarnEnabled() bool {
+	return logger.IsLevelEnabled(logrus.WarnLevel)
+}
+
+func IsErrorEnabled() bool {
+	return logger.IsLevelEnabled(logrus.ErrorLevel)
+}
+
+func IsFatalEnabled() bool {
+	return logger.IsLevelEnabled(logrus.FatalLevel)
+}
