@@ -80,7 +80,7 @@ func (client *UciClient) Load(fragment *UciFragment) error {
 	}
 
 	if fragment.Section != nil {
-		return client.Package.UnmarshalSection(fragment.Section, &fragment.Content)
+		return client.Package.UnmarshalSection(fragment.Section, fragment.Content)
 	} else {
 		return client.Package.Unmarshal(fragment.SectionName, fragment.Content)
 	}
