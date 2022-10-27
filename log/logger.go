@@ -59,7 +59,7 @@ type ModuleHook struct {
 }
 
 func (hook *ModuleHook) Fire(entry *logrus.Entry) error {
-	entry.Data["module"] = hook.Module
+	entry.Data["@!module"] = hook.Module
 	return nil
 }
 
