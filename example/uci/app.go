@@ -422,7 +422,12 @@ func queryData(ctx *openwrt.UciContext) {
 
 	sections := client.QuerySectionByOption("option_01", "value_01")
 	fmt.Println("")
-	fmt.Println("sections:")
+	fmt.Println("sections by option:")
+	fmt.Println(sections)
+
+	sections = client.QuerySectionByTypeAndOption("fragment_type", "option_01", "value_01")
+	fmt.Println("")
+	fmt.Println("sections by type and option:")
 	fmt.Println(sections)
 }
 
