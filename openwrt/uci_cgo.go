@@ -97,6 +97,7 @@ import (
 	"unsafe"
 
 	"github.com/hzwesoft-github/underscore/lang"
+	"github.com/hzwesoft-github/underscore/log"
 )
 
 type UciOptionType int
@@ -1072,6 +1073,9 @@ func (ctx *UciContext) uci_lookup_option(section *C.struct_uci_section, name str
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
 
+	if log.IsDebugEnabled() {
+		logger.Debugf("uci_lookup_option called, params: %v, %v", ctx.ptr, section, cname)
+	}
 	return C.uci_lookup_option(ctx.ptr, section, cname)
 }
 
