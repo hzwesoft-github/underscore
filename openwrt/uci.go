@@ -11,10 +11,12 @@ type UciClient struct {
 	Context *UciContext
 	Package *UciPackage
 
-	shouldCommit bool
+	shouldCommit  bool
+	externContext bool
 }
 
 func NewUciClient(context *UciContext, packageName string) (*UciClient, error) {
+	externCtx := context != nil
 	if context == nil {
 		context = NewUciContext()
 	}
@@ -25,7 +27,7 @@ func NewUciClient(context *UciContext, packageName string) (*UciClient, error) {
 		return nil, err
 	}
 
-	return &UciClient{context, pkg, false}, nil
+	return &UciClient{context, pkg, false, externCtx}, nil
 }
 
 func (client *UciClient) Flush() error {
@@ -36,6 +38,10 @@ func (client *UciClient) Flush() error {
 }
 
 func (client *UciClient) Free() {
+	if !client.externContext {
+		defer client.Context.Free()
+	}
+
 	defer client.Package.Unload()
 
 	if !client.shouldCommit {
