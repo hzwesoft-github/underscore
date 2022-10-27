@@ -431,8 +431,26 @@ func queryData(ctx *openwrt.UciContext) {
 	fmt.Println(sections)
 }
 
+func queryNetwork() {
+	client, err := openwrt.NewUciClient(nil, "firewall")
+	if err != nil {
+		panic(err)
+	}
+	defer client.Free()
+
+	sections := client.QuerySectionByTypeAndOption("zone", "input", "ACCEPT")
+	fmt.Println(sections)
+
+	for _, s := range sections {
+		options := s.ListOptions()
+		for _, o := range options {
+			fmt.Println(o.Name, o.Value, o.Values)
+		}
+	}
+}
+
 func main() {
-	// basic api
+	// basic apiuci
 	// ctx := openwrt.NewUciContext()
 	// addByHierarchyApi(ctx)
 	// loadByHierarchyApi(ctx)
@@ -445,16 +463,18 @@ func main() {
 
 	// advanced api
 
-	ctx := openwrt.NewUciContext()
-	defer ctx.Free()
+	// ctx := openwrt.NewUciContext()
+	// defer ctx.Free()
 
-	ctx.DelPackage("ng_test")
+	// ctx.DelPackage("ng_test")
 
-	saveData(ctx)
+	// saveData(ctx)
 
-	delData(ctx)
+	// delData(ctx)
 
-	queryData(ctx)
+	// queryData(ctx)
 
-	checkResult()
+	queryNetwork()
+
+	// checkResult()
 }

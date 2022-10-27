@@ -6,10 +6,10 @@ package openwrt
 #include <stdlib.h>
 #include <stdio.h>
 
-static void list_sections(struct uci_package *package, struct uci_section **section, int *section_len)
+static void list_sections(struct uci_package *package, struct uci_section ***section, int *section_len)
 {
 	int i;
-	struct uci_element *element;
+	struct uci_element *element = NULL;
 
 	i = 0;
 	uci_foreach_element(&package->sections, element)
@@ -17,20 +17,21 @@ static void list_sections(struct uci_package *package, struct uci_section **sect
 		i++;
   }
 
-	struct uci_section *ptr = calloc(i, sizeof(struct uci_section));
+	struct uci_section **ptr = calloc(i, sizeof(struct uci_section*));
 
 	i = 0;
+	element = NULL;
 	uci_foreach_element(&package->sections, element)
   {
 		struct uci_section *p = uci_to_section(element);
-		ptr[i++] = *p;
+		ptr[i++] = p;
   }
 
 	*section = &ptr[0];
 	*section_len = i;
 }
 
-static void list_options(struct uci_section *section, struct uci_option **option, int *option_len)
+static void list_options(struct uci_section *section, struct uci_option ***option, int *option_len)
 {
 	int i;
 	struct uci_element *element;
@@ -41,13 +42,14 @@ static void list_options(struct uci_section *section, struct uci_option **option
 		i++;
   }
 
-	struct uci_option *ptr = calloc(i, sizeof(struct uci_option));
+	struct uci_option **ptr = calloc(i, sizeof(struct uci_option*));
 
 	i = 0;
+	element = NULL;
 	uci_foreach_element(&section->options, element)
   {
     struct uci_option *p = uci_to_option(element);
-		ptr[i++] = *p;
+		ptr[i++] = p;
   }
 
 	*option = &ptr[0];
@@ -73,6 +75,7 @@ static void option_list_value(struct uci_option *option, char ***list, int *list
 	char **ptr = calloc(i, sizeof(char*));
 
 	i = 0;
+	element = NULL;
 	uci_foreach_element(&option->v.list, element)
   {
 		char *p = element->name;
@@ -97,7 +100,6 @@ import (
 	"unsafe"
 
 	"github.com/hzwesoft-github/underscore/lang"
-	"github.com/hzwesoft-github/underscore/log"
 )
 
 type UciOptionType int
@@ -361,7 +363,7 @@ func (pkg *UciPackage) DelUnnamedSection(section *UciSection) error {
 }
 
 func (pkg *UciPackage) ListSections() []UciSection {
-	var csections *C.struct_uci_section
+	var csections **C.struct_uci_section
 	var clength C.int
 
 	C.list_sections(pkg.ptr, &csections, &clength)
@@ -370,13 +372,13 @@ func (pkg *UciPackage) ListSections() []UciSection {
 	defer C.free(sectionPtr)
 	length := int(clength)
 
-	sectionArray := (*[1 << 10]C.struct_uci_section)(sectionPtr)
+	sectionArray := (*[1 << 10]*C.struct_uci_section)(sectionPtr)
 	slice := sectionArray[0:length:length]
 
 	sections := make([]UciSection, 0)
 	for _, v := range slice {
 		name := C.GoString(v.e.name)
-		sections = append(sections, UciSection{name, C.GoString(v._type), bool(v.anonymous), &v, pkg})
+		sections = append(sections, UciSection{name, C.GoString(v._type), bool(v.anonymous), v, pkg})
 	}
 
 	return sections
@@ -971,12 +973,7 @@ func (section *UciSection) DelFromList(name string, value string) error {
 }
 
 func (section *UciSection) ListOptions() []UciOption {
-	if section.Anonymous {
-		// FIXME 找到其他方法列出匿名节的option
-		return nil
-	}
-
-	var coptions *C.struct_uci_option
+	var coptions **C.struct_uci_option
 	var clength C.int
 
 	C.list_options(section.ptr, &coptions, &clength)
@@ -985,7 +982,7 @@ func (section *UciSection) ListOptions() []UciOption {
 	defer C.free(optionPtr)
 	length := int(clength)
 
-	optionArray := (*[1 << 10]C.struct_uci_option)(optionPtr)
+	optionArray := (*[1 << 10]*C.struct_uci_option)(optionPtr)
 	slice := optionArray[0:length:length]
 
 	options := make([]UciOption, 0)
@@ -1073,9 +1070,6 @@ func (ctx *UciContext) uci_lookup_option(section *C.struct_uci_section, name str
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
 
-	if log.IsDebugEnabled() {
-		logger.Debugf("uci_lookup_option called, params: %v, %v", ctx.ptr, section, cname)
-	}
 	return C.uci_lookup_option(ctx.ptr, section, cname)
 }
 
