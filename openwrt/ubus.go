@@ -4,8 +4,8 @@ type UbusClient struct {
 	Context *UbusContext
 	Started bool
 
-	objs      map[string]UbusObject
-	listeners map[string]UbusEventHandler
+	Objects   map[string]UbusObject
+	Listeners map[string]UbusEventHandler
 }
 
 func NewUbusClient(reconnect bool) (*UbusClient, error) {
@@ -22,21 +22,21 @@ func (client *UbusClient) Free() {
 }
 
 func (client *UbusClient) AddObject(obj *UbusObject) {
-	if client.objs == nil {
-		client.objs = make(map[string]UbusObject)
+	if client.Objects == nil {
+		client.Objects = make(map[string]UbusObject)
 	}
-	client.objs[obj.Name] = *obj
+	client.Objects[obj.Name] = *obj
 }
 
 func (client *UbusClient) RegisterEvent(event string, cb UbusEventHandler) {
-	if client.listeners == nil {
-		client.listeners = make(map[string]UbusEventHandler)
+	if client.Listeners == nil {
+		client.Listeners = make(map[string]UbusEventHandler)
 	}
-	client.listeners[event] = cb
+	client.Listeners[event] = cb
 }
 
 func (client *UbusClient) RemoveObject(name string) error {
-	delete(client.objs, name)
+	delete(client.Objects, name)
 
 	if client.Started {
 		return client.Context.RemoveObject(name)
@@ -46,7 +46,7 @@ func (client *UbusClient) RemoveObject(name string) error {
 }
 
 func (client *UbusClient) UnregisterEvent(event string) error {
-	delete(client.listeners, event)
+	delete(client.Listeners, event)
 
 	if client.Started {
 		return client.Context.UnregisterEvent(event)
@@ -56,25 +56,25 @@ func (client *UbusClient) UnregisterEvent(event string) error {
 }
 
 func (client *UbusClient) Start() (err error) {
-	if len(client.objs) > 0 {
-		for name := range client.objs {
-			obj := client.objs[name]
+	if len(client.Objects) > 0 {
+		for name := range client.Objects {
+			obj := client.Objects[name]
 			if err = client.Context.AddObject(&obj); err != nil {
 				return err
 			}
 		}
 	}
 
-	if len(client.listeners) > 0 {
-		for event := range client.listeners {
-			cb := client.listeners[event]
+	if len(client.Listeners) > 0 {
+		for event := range client.Listeners {
+			cb := client.Listeners[event]
 			if err = client.Context.RegisterEvent(event, cb); err != nil {
 				return err
 			}
 		}
 	}
 
-	if len(client.objs) > 0 || len(client.listeners) > 0 {
+	if len(client.Objects) > 0 || len(client.Listeners) > 0 {
 		client.Context.AddULoop()
 	}
 
