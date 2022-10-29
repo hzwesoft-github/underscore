@@ -40,5 +40,6 @@ func StrToBool(str string, defaultVal bool) bool {
 	if err != nil {
 		return defaultVal
 	}
+
 	return ret
 }
