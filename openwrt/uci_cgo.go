@@ -687,6 +687,12 @@ func _UnmarshalListValue(section *UciSection, optionValues []string, value refle
 		}
 
 		origin.Set(value)
+	case reflect.Bool:
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+	case reflect.Float32, reflect.Float64:
+	case reflect.String:
+		// do nothing, support both normal and slice field using same uci option name
 	default:
 		return fmt.Errorf("can't unmarshal %s for %s", value.Kind().String(), optionValues)
 	}
@@ -730,6 +736,8 @@ func _UnmarshalStringValue(section *UciSection, optionValue string, value reflec
 		return _UnmarshalStringValue(section, optionValue, value.Elem())
 	case reflect.Struct:
 		return _UnmarshalStruct(section, value.Type(), value)
+	case reflect.Slice:
+		// do nothing, support both normal and slice field using same uci option name
 	default:
 		return fmt.Errorf("can't unmarshal %s for %s", value.Kind().String(), optionValue)
 	}
@@ -788,6 +796,7 @@ func _UnmarshalStruct(section *UciSection, typ reflect.Type, val reflect.Value) 
 	return nil
 }
 
+// TODO test
 func _UnmarshalMap(section *UciSection, typ reflect.Type, val reflect.Value) error {
 	options := section.ListOptions()
 	if len(options) == 0 {
