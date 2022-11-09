@@ -109,10 +109,11 @@ func (typ BlobmsgType) toEnum() C.enum_blobmsg_type {
 }
 
 var (
-	ubusHandlerMap      lang.DMap[string, string, UbusHandler] = lang.NewDMap[string, string, UbusHandler]()
-	ubusDataHandlerMap  map[int32]UbusDataHandler              = make(map[int32]UbusDataHandler)
-	ubusEventHandlerMap map[string]UbusEventHandler            = make(map[string]UbusEventHandler)
-	mutex               sync.Mutex
+	ubusHandlerMap        lang.DMap[string, string, UbusHandler] = lang.NewDMap[string, string, UbusHandler]()
+	ubusDataHandlerMap    map[int32]UbusDataHandler              = make(map[int32]UbusDataHandler)
+	ubusDataHandlerErrors map[int32]error                        = make(map[int32]error)
+	ubusEventHandlerMap   map[string]UbusEventHandler            = make(map[string]UbusEventHandler)
+	mutex                 sync.Mutex
 )
 
 // encapsulate ubus_context
@@ -125,7 +126,7 @@ type UbusContext struct {
 
 // callback
 type UbusHandler func(obj string, method string, req *UbusRequestData, msg string)
-type UbusDataHandler func(msg string)
+type UbusDataHandler func(msg string) error
 type UbusEventHandler func(event string, msg string)
 
 // ubus object related
@@ -462,7 +463,9 @@ func ubus_data_handler_stub(req *C.struct_ubus_request, typ C.int, msg *C.struct
 		str := C.blobmsg_format_json_indent(msg, C.bool(true), C.int(0))
 		defer C.free(unsafe.Pointer(str))
 
-		handler(C.GoString(str))
+		if err := handler(C.GoString(str)); err != nil {
+			ubusDataHandlerErrors[seq] = err
+		}
 	}
 }
 
@@ -501,6 +504,11 @@ func (ctx *UbusContext) Invoke(id uint32, method string, param any, timeout int,
 	}
 	if ret != C.UBUS_STATUS_OK {
 		return fmt.Errorf("%d: %s", int(ret), UbusErrorString(ret))
+	}
+
+	if err, ok := ubusDataHandlerErrors[seq]; ok {
+		defer delete(ubusDataHandlerErrors, seq)
+		return err
 	}
 
 	return nil
