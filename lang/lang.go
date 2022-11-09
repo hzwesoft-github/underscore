@@ -9,6 +9,15 @@ func IsBlank(str string) bool {
 	return strings.TrimSpace(str) == ""
 }
 
+func EqualsAny[T comparable](one T, values ...T) bool {
+	for _, v := range values {
+		if one == v {
+			return true
+		}
+	}
+	return false
+}
+
 func TernaryOperator[T any](cond bool, value1 T, value2 T) T {
 	if cond {
 		return value1
