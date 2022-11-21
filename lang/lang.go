@@ -52,3 +52,25 @@ func StrToBool(str string, defaultVal bool) bool {
 
 	return ret
 }
+
+func StrSplit2(str string, sep string) (string, string) {
+	parts := strings.Split(str, sep)
+	if len(parts) == 1 {
+		return parts[0], ""
+	}
+
+	return parts[0], parts[1]
+}
+
+func StrSplit3(str string, sep string) (string, string, string) {
+	parts := strings.Split(str, sep)
+	if len(parts) == 1 {
+		return parts[0], "", ""
+	}
+
+	if len(parts) == 2 {
+		return parts[0], parts[1], ""
+	}
+
+	return parts[0], parts[1], parts[2]
+}
