@@ -74,3 +74,58 @@ func StrSplit3(str string, sep string) (string, string, string) {
 
 	return parts[0], parts[1], parts[2]
 }
+
+func StrToSlice(strs ...string) []string {
+	slice := make([]string, 0)
+	for _, str := range strs {
+		if str != "" {
+			slice = append(slice, str)
+		}
+	}
+
+	return slice
+}
+
+func SliceToStr2(slice []string) (string, string) {
+	if len(slice) == 0 {
+		return "", ""
+	}
+
+	if len(slice) == 1 {
+		return slice[0], ""
+	}
+
+	return slice[0], slice[1]
+
+}
+
+func SliceToStr3(slice []string) (string, string, string) {
+	if len(slice) == 0 {
+		return "", "", ""
+	}
+	if len(slice) == 1 {
+		return slice[0], "", ""
+	}
+	if len(slice) == 2 {
+		return slice[0], slice[1], ""
+	}
+
+	return slice[0], slice[1], slice[2]
+}
+
+func SliceToStr4(slice []string) (string, string, string, string) {
+	if len(slice) == 0 {
+		return "", "", "", ""
+	}
+	if len(slice) == 1 {
+		return slice[0], "", "", ""
+	}
+	if len(slice) == 2 {
+		return slice[0], slice[1], "", ""
+	}
+	if len(slice) == 3 {
+		return slice[0], slice[1], slice[2], ""
+	}
+
+	return slice[0], slice[1], slice[2], slice[3]
+}
