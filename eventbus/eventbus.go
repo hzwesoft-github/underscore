@@ -5,7 +5,6 @@ import (
 
 	"github.com/hzwesoft-github/underscore/lang"
 	"github.com/hzwesoft-github/underscore/openwrt"
-	// "github.com/hzwesoft-github/underscore/openwrt"
 )
 
 type SendMode int
