@@ -100,6 +100,15 @@ func (client *UciClient) QuerySectionByType(typ string) []UciSection {
 	})
 }
 
+func (client *UciClient) QueryOneByOption(name string, value string) *UciSection {
+	sections := client.QuerySectionByOption(name, value)
+	if len(sections) == 0 {
+		return nil
+	}
+
+	return &sections[0]
+}
+
 func (client *UciClient) QuerySectionByOption(name string, value string) []UciSection {
 	return client.Package.QuerySection(func(section *UciSection) bool {
 		option := section.LoadOption(name)
@@ -122,6 +131,15 @@ func (client *UciClient) QuerySectionByOption(name string, value string) []UciSe
 			return false
 		}
 	})
+}
+
+func (client *UciClient) QueryOneByTypeAndOption(typ string, name string, value string) *UciSection {
+	sections := client.QuerySectionByTypeAndOption(typ, name, value)
+	if len(sections) == 0 {
+		return nil
+	}
+
+	return &sections[0]
 }
 
 func (client *UciClient) QuerySectionByTypeAndOption(typ string, name string, value string) []UciSection {
