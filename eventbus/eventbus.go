@@ -1,8 +1,6 @@
 package eventbus
 
 import (
-	"fmt"
-
 	"github.com/hzwesoft-github/underscore/lang"
 	"github.com/hzwesoft-github/underscore/openwrt"
 )
@@ -26,7 +24,6 @@ func init() {
 
 func Register(topic string, cb OnEvent) {
 	lang.AddSliceMapValue(subscribers, topic, cb)
-	fmt.Printf("%v\n", subscribers)
 }
 
 func SendLocal(event Event, async bool) error {
