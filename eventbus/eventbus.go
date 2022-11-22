@@ -7,14 +7,6 @@ import (
 	"github.com/hzwesoft-github/underscore/openwrt"
 )
 
-type SendMode int
-
-const (
-	LOCAL SendMode = iota
-	REMOTE
-	BOTH
-)
-
 type Event struct {
 	Topic   string
 	Payload any
