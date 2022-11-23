@@ -73,3 +73,11 @@ func SendEvent(event Event, async bool) error {
 
 	return nil
 }
+
+func Validate(event Event) error {
+	if err := SendLocal(event, false); err != nil {
+		return err
+	}
+
+	return nil
+}
