@@ -50,10 +50,11 @@ func SendLocal(event Event, async bool) error {
 }
 
 func SendRemote(topic string, payload any) error {
-	client, err := openwrt.NewUbusClient(true)
+	client, err := openwrt.NewUbusClient(false)
 	if err != nil {
 		return err
 	}
+	defer client.Free()
 
 	return client.SendEvent(topic, payload)
 }
