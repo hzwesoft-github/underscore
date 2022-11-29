@@ -6,10 +6,11 @@ import (
 )
 
 type Event struct {
-	Topic   string
-	Payload any
-	Local   bool
-	Remote  bool
+	Topic       string
+	Payload     any
+	ContextData any
+	Local       bool
+	Remote      bool
 }
 
 type OnEvent func(Event) error
