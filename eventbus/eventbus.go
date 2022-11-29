@@ -84,27 +84,30 @@ func Validate(event Event) error {
 	return nil
 }
 
-func NewEvent(topic string, payload any, local, remote bool) Event {
+func NewEvent(topic string, payload any, context any, local, remote bool) Event {
 	return Event{
-		Topic:   topic,
-		Payload: payload,
-		Local:   local,
-		Remote:  remote,
+		Topic:       topic,
+		Payload:     payload,
+		ContextData: context,
+		Local:       local,
+		Remote:      remote,
 	}
 }
 
-func NewLocalEvent(topic string, payload any) Event {
+func NewLocalEvent(topic string, payload any, context any) Event {
 	return Event{
-		Topic:   topic,
-		Payload: payload,
-		Local:   true,
+		Topic:       topic,
+		Payload:     payload,
+		ContextData: context,
+		Local:       true,
 	}
 }
 
-func NewRemoteEvent(topic string, payload any) Event {
+func NewRemoteEvent(topic string, payload any, context any) Event {
 	return Event{
-		Topic:   topic,
-		Payload: payload,
-		Remote:  true,
+		Topic:       topic,
+		Payload:     payload,
+		ContextData: context,
+		Remote:      true,
 	}
 }
