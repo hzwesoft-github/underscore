@@ -56,7 +56,7 @@ func (client *UciClient) Remove() error {
 }
 
 func (client *UciClient) Save(fragment *UciFragment) error {
-	if fragment.Section == nil && (lang.IsBlank(fragment.SectionName) || lang.IsBlank(fragment.SectionType)) {
+	if fragment.Section == nil && lang.IsBlank(fragment.SectionType) {
 		return errors.New("ng: fragment section must be specified")
 	}
 
