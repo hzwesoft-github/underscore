@@ -824,7 +824,8 @@ func (pkg *UciPackage) Unmarshal(sectionName string, dest any) (err error) {
 
 	section := pkg.LoadSection(sectionName)
 	if section == nil {
-		return fmt.Errorf("ng: section %s not found", sectionName)
+		// return fmt.Errorf("ng: section %s not found", sectionName)
+		return nil
 	}
 
 	return pkg.UnmarshalSection(section, dest)
