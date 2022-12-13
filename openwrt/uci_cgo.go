@@ -432,10 +432,19 @@ func _MarshalValue(section *UciSection, optionName string, value reflect.Value, 
 	case reflect.Bool:
 		section.SetStringOption(optionName, lang.TernaryOperator(value.Bool(), "true", "false"))
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if value.Int() == 0 && omitEmpty {
+			return nil
+		}
 		section.SetStringOption(optionName, strconv.FormatInt(value.Int(), 10))
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if value.Uint() == 0 && omitEmpty {
+			return nil
+		}
 		section.SetStringOption(optionName, strconv.FormatUint(value.Uint(), 10))
 	case reflect.Float32, reflect.Float64:
+		if value.Float() == 0 && omitEmpty {
+			return nil
+		}
 		section.SetStringOption(optionName, strconv.FormatFloat(value.Float(), 'f', 2, 64))
 	case reflect.String:
 		if value.String() == "" && omitEmpty {
@@ -443,6 +452,9 @@ func _MarshalValue(section *UciSection, optionName string, value reflect.Value, 
 		}
 		section.SetStringOption(optionName, value.String())
 	case reflect.Pointer, reflect.Interface:
+		if value.IsNil() {
+			return nil
+		}
 		return _MarshalValue(section, optionName, value.Elem(), omitEmpty)
 	case reflect.Slice:
 		if value.Len() == 0 && omitEmpty {
