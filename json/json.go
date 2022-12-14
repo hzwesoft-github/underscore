@@ -37,6 +37,14 @@ func MarshalToString(v interface{}) (string, error) {
 	return encoder.MarshalToString(v)
 }
 
+func MarshalToStringIgnoreError(v interface{}) string {
+	str, err := encoder.MarshalToString(v)
+	if err != nil {
+		return "ERROR"
+	}
+	return str
+}
+
 func Marshal(v interface{}) ([]byte, error) {
 	return encoder.Marshal(v)
 }
