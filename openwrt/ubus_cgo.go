@@ -502,6 +502,7 @@ func (ctx *UbusContext) Invoke(id uint32, method string, param any, timeout int,
 	retry := 5
 	for i := 0; i < retry; i++ {
 		if ret, err = C.ubus_complete_request(ctx.ptr, req, C.int(timeout)); err != nil {
+			// if err.Error() == "resource temporarily unavailable"
 			continue
 		}
 		break
