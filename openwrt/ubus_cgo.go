@@ -55,7 +55,6 @@ static void bind_ubus_event_handler(struct ubus_event_handler *ue)
 */
 import "C"
 import (
-	"errors"
 	"fmt"
 	"path"
 	"sync"
@@ -490,7 +489,7 @@ func (ctx *UbusContext) Invoke(id uint32, method string, param any, timeout int,
 	mutex.Lock()
 	defer mutex.Unlock()
 	if ret, err = C.ubus_invoke_async(ctx.ptr, C.uint32_t(id), cmethod, buf.ptr.head, req); err != nil {
-		return errors.New("ubus_invoke_async")
+		return err
 	}
 	if ret != C.UBUS_STATUS_OK {
 		return fmt.Errorf("%d: %s", int(ret), UbusErrorString(ret))
@@ -500,8 +499,16 @@ func (ctx *UbusContext) Invoke(id uint32, method string, param any, timeout int,
 	seq := int32(req.seq)
 	ubusDataHandlerMap[seq] = cb
 
-	if ret, err = C.ubus_complete_request(ctx.ptr, req, C.int(timeout)); err != nil {
-		return errors.New("ubus_complete_request")
+	retry := 5
+	for i := 0; i < retry; i++ {
+		if ret, err = C.ubus_complete_request(ctx.ptr, req, C.int(timeout)); err != nil {
+			continue
+		}
+		break
+	}
+
+	if err != nil {
+		return err
 	}
 	if ret != C.UBUS_STATUS_OK {
 		return fmt.Errorf("%d: %s", int(ret), UbusErrorString(ret))
